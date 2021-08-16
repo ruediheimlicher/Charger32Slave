@@ -43,6 +43,9 @@
 #define U_MIN  3.0
 #define U_OFF  2.5
 #define U_MAX  4.2
+
+#define STOM_PWM  23
+
 // USB
 #define USB_SEND  0 
 

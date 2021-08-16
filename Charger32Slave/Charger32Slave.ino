@@ -74,7 +74,7 @@ volatile uint16_t       curr_U = 0;
 volatile uint16_t       curr_O = 0;
 
 volatile uint16_t  sekundentimercounter = 0;
-volatile uint16_t timer2sekunde = 0;
+volatile uint16_t adctimersekunde = 0;
 int8_t r;
 
 uint16_t count=0;
@@ -91,6 +91,7 @@ volatile uint8_t taskcode;
 
 // Charger
 volatile uint16_t                    messungcounter=0; // Anzahl messungen fortlaufend
+volatile uint16_t                     blockcounter = 0; // Block, in den gesichert werden soll, mit einem Offset von 1 (Block 0 ist header der SD).
 
 volatile uint16_t                    writedatacounter=0; // Anzahl mmc-writes fortlaufend
 volatile uint16_t                    writemmcstartcounter=0; // Anzahl mmc-writes fortlaufend
@@ -139,7 +140,6 @@ uint8_t readerr=0;
 uint8_t writeerr=0;
 
 volatile uint16_t saveSDposition = 0;
-volatile uint16_t blockcounter = 0; // Block, in den gesichert werden soll, mit einem Offset von 1 (Block 0 ist header der SD).
 volatile uint16_t blockoffset = 1;
 volatile uint16_t blockdatacounter = 0; //  Anzahl gespeicherter Messungen auf aktuellem Block. Fuer rescue verwendet
 
@@ -251,13 +251,19 @@ void adctimerfunction()
    if (sekundentimercounter == 50)
    {
    }
-   if (sekundentimercounter >= 400)
+   if (sekundentimercounter >= 1000)
    {
-      adcstatus |= (1<<ADC_U_BIT);
-      adcstatus |= (1<<ADC_I_BIT);
-
+      intervallcounter++;
+      if(intervallcounter >= intervall)
+      {
+         intervallcounter = 0;
+         hoststatus |= (1<<MESSUNG_OK); // Messung ausloesen
+         adcstatus |= (1<<ADC_U_BIT);
+         adcstatus |= (1<<ADC_I_BIT);
+        
+      }
       sekundentimercounter=0;
-      timer2sekunde++;
+      adctimersekunde++;
       //digitalWriteFast(OSZI_PULS_A, !digitalReadFast(OSZI_PULS_A));
       OSZIATOGG();
    }
@@ -275,8 +281,10 @@ void setup()
    _delay_ms(100);
    lcd_puts("Guten Tag Charger");
    _delay_ms(100);
-   adcTimer.begin(adctimerfunction,adctimerintervall);
+   adcTimer.begin(adctimerfunction,adctimerintervall); // 1ms
    lcd_clr_line(0);
+   analogWriteResolution(10);
+   pinMode(A14,OUTPUT);
 
 }
 elapsedMillis sinceRecv;
@@ -304,7 +312,7 @@ void loop()
          lcd_puthex(recvbuffer[TASK_BYTE]);           
 
          lcd_gotoxy(16,0);
-         lcd_putint12(timer2sekunde);
+         lcd_putint12(adctimersekunde);
 
          lcd_gotoxy(0,1);
          lcd_putc('O');
@@ -332,8 +340,10 @@ void loop()
       
    }// LOOPLED
    
-   if ((adcstatus & (1<<ADC_U_BIT)) || (adcstatus & (1<<ADC_I_BIT)))
+   if (hoststatus & (1<<MESSUNG_OK) ) // Messung ausloesen
+ //  if ((adcstatus & (1<<ADC_U_BIT)) || (adcstatus & (1<<ADC_I_BIT)))
    {
+      hoststatus &= ~(1<<MESSUNG_OK);
       sendbuffer[0] = TEENSY_DATA;
       adcstatus &= ~(1<<ADC_U_BIT);
       noInterrupts();
@@ -361,6 +371,17 @@ void loop()
       sendbuffer[I_SHUNT_U_H_BYTE + DATA_START_BYTE] = (curr_U & 0xFF00)>>8;
       sendbuffer[I_SHUNT_O_L_BYTE + DATA_START_BYTE] = curr_O & 0x00FF;
       sendbuffer[I_SHUNT_O_H_BYTE + DATA_START_BYTE] = (curr_O & 0xFF00)>>8;
+      
+      // messungcounter uebergeben
+      Serial.print(F(" messungcounter: "));
+        Serial.print(messungcounter);
+
+      sendbuffer[DATACOUNT_LO_BYTE] = (messungcounter & 0x00FF);
+      sendbuffer[DATACOUNT_HI_BYTE] = ((messungcounter & 0xFF00)>>8);
+      messungcounter++;
+      
+      sendbuffer[BLOCKOFFSETLO_BYTE] = blockcounter & 0x00FF; // Byte 3, 4
+      sendbuffer[BLOCKOFFSETHI_BYTE] = (blockcounter & 0xFF00)>>8; // Nummer des geschriebenen Blocks hi
 
       senderfolg = RawHID.send((void*)sendbuffer, 100);
       if (senderfolg > 0) 
@@ -392,10 +413,13 @@ void loop()
          {
             case STROM_SET:
             {
-               Serial.println(("STROM_SET  0x88 "));
+               //Serial.println(("STROM_SET  0x88 "));
                PWM_A = ((recvbuffer[STROM_A_H_BYTE]) << 8) | recvbuffer[STROM_A_L_BYTE] ;
                Serial.print("STROM PWM_A:");
-               Serial.println(PWM_A);               
+               Serial.println(PWM_A); 
+               analogWrite(23,PWM_A);
+               analogWrite(A14,PWM_A);
+               
             }break;
             case DEFAULT: // 
             {
@@ -428,6 +452,7 @@ void loop()
                lcd_putc('R');
                sendbuffer[0] = READ_START;
                messungcounter = 0;
+               blockcounter = 0;
                //    hoststatus |= (1<<USB_READ_OK);
                sendbuffer[30] = 73;
                sendbuffer[DEVICECOUNT_BYTE] = devicecount;
@@ -448,10 +473,12 @@ void loop()
                //lcd_putint(ee);
                hoststatus |= (1<<USB_READ_OK);
                messungcounter = 0;
+               blockcounter = 0;
                sendbuffer[0] = MESSUNG_START;
                blockdatacounter = 0;            // Zaehler fuer Data auf dem aktuellen Block
                writedatacounter = 0;
                linecounter=0;
+               intervallcounter=0;
                
                
                /*
