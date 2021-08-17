@@ -285,6 +285,7 @@ void setup()
    lcd_clr_line(0);
    analogWriteResolution(10);
    pinMode(A14,OUTPUT);
+   
 
 }
 elapsedMillis sinceRecv;
@@ -340,10 +341,11 @@ void loop()
       
    }// LOOPLED
    
+   // MARK: MESSUNG_OK  
    if (hoststatus & (1<<MESSUNG_OK) ) // Messung ausloesen
- //  if ((adcstatus & (1<<ADC_U_BIT)) || (adcstatus & (1<<ADC_I_BIT)))
    {
       hoststatus &= ~(1<<MESSUNG_OK);
+      
       sendbuffer[0] = TEENSY_DATA;
       adcstatus &= ~(1<<ADC_U_BIT);
       noInterrupts();
@@ -372,34 +374,48 @@ void loop()
       sendbuffer[I_SHUNT_O_L_BYTE + DATA_START_BYTE] = curr_O & 0x00FF;
       sendbuffer[I_SHUNT_O_H_BYTE + DATA_START_BYTE] = (curr_O & 0xFF00)>>8;
       
+      if(adcstatus & (1<<FIRSTRUN))
+      {
+         Serial.println(F(" FIRSTRUN "));
+
+         messungcounter = 0;
+         adcstatus &= ~(1<<FIRSTRUN);
+         
+      }
       // messungcounter uebergeben
       Serial.print(F(" messungcounter: "));
-        Serial.print(messungcounter);
+        Serial.println(messungcounter);
 
       sendbuffer[DATACOUNT_LO_BYTE] = (messungcounter & 0x00FF);
       sendbuffer[DATACOUNT_HI_BYTE] = ((messungcounter & 0xFF00)>>8);
+      
       messungcounter++;
       
       sendbuffer[BLOCKOFFSETLO_BYTE] = blockcounter & 0x00FF; // Byte 3, 4
       sendbuffer[BLOCKOFFSETHI_BYTE] = (blockcounter & 0xFF00)>>8; // Nummer des geschriebenen Blocks hi
 
-      senderfolg = RawHID.send((void*)sendbuffer, 100);
-      if (senderfolg > 0) 
+      if (hoststatus & (1<<SEND_OK))
       {
-        Serial.print(F(" ADC packet "));
-        Serial.println(packetcount);
-        packetcount = packetcount + 1;
-        
-      } else {
-        Serial.println(F("Unable to transmit packet"));
+         senderfolg = RawHID.send((void*)sendbuffer, 100);
+         if (senderfolg > 0) 
+         {
+            Serial.print(F(" ADC packet "));
+            Serial.println(packetcount);
+            packetcount = packetcount + 1;
+            
+         } else {
+            Serial.println(F("Unable to transmit packet"));
+         }
+         Serial.print(F("***  senderfolg: "));
+         Serial.println(senderfolg);
+         usbsendcounter++;
       }
-      Serial.print(F("***  senderfolg: "));
-      Serial.println(senderfolg);
-      usbsendcounter++;
    } // if adcstatus
 
    if (sinceRecv > 2)
    {
+       
+      //
       sinceRecv = 0;
       recvbuffer[0] = 0; // nichts senden, wenn kein taskcode
       noInterrupts();
@@ -457,7 +473,9 @@ void loop()
                sendbuffer[30] = 73;
                sendbuffer[DEVICECOUNT_BYTE] = devicecount;
                uint8_t ind=0;
-                
+               adcstatus |= (1<<FIRSTRUN);
+               
+               hoststatus |= (1<<SEND_OK); 
             }break;
                
                //   *********************************************************************    
@@ -465,13 +483,18 @@ void loop()
                //   ********************************************************************* 
             case MESSUNG_START:
             {
- //              clear_sendbuffer();
+               
+               hoststatus |= (1<<SEND_OK); 
+ //             clear_sendbuffer();
                cli();
                Serial.print(F("MESSUNG_START"));
                //uint8_t ee = eeprom_read_word(&eeprom_intervall);
                //lcd_gotoxy(12,3);
                //lcd_putint(ee);
                hoststatus |= (1<<USB_READ_OK);
+               
+               adcstatus |= (1<<FIRSTRUN);
+               
                messungcounter = 0;
                blockcounter = 0;
                sendbuffer[0] = MESSUNG_START;
@@ -518,13 +541,13 @@ void loop()
                
                // nicht verwendet
                 uint8_t kan = 0;
-               lcd_gotoxy(8,2);
+          //     lcd_gotoxy(8,2);
                for(kan = 0;kan < 4;kan++)
                {
-                  lcd_putint2(kanalstatusarray[kan]);
+          //        lcd_putint2(kanalstatusarray[kan]);
                }
                           
-               _delay_ms(100);          
+        //       _delay_ms(100);          
                            
                            
                for(kan = 0;kan < 4;kan++)
@@ -532,10 +555,10 @@ void loop()
                   kanalstatusarray[kan] = recvbuffer[KANAL_BYTE + kan];
                }
                
-               lcd_gotoxy(8,2);
+          //     lcd_gotoxy(8,2);
                for(kan = 0;kan < 4;kan++)
                {
-                  lcd_putint2(kanalstatusarray[kan]);
+           //       lcd_putint2(kanalstatusarray[kan]);
                
                }
           
@@ -549,8 +572,8 @@ void loop()
                 lcd_putc(' ');
                 lcd_puthex(saveSDposition);
                 */
-               lcd_gotoxy(12,1);
-               lcd_puts("start ");
+         //      lcd_gotoxy(12,1);
+         //      lcd_puts("start ");
                sendbuffer[1] = sd_status; // rueckmeldung 
                //sendbuffer[2] = wl_callback_status;
                //               sendbuffer[5] = 18;//recvbuffer[STARTMINUTELO_BYTE];;
@@ -571,7 +594,8 @@ void loop()
                //   *********************************************************************                
             case MESSUNG_STOP:
             {
- //             clear_sendbuffer();
+               hoststatus &= ~(1<<SEND_OK); 
+              clear_sendbuffer();
                sendbuffer[0] = MESSUNG_STOP;
                hoststatus &= ~(1<<USB_READ_OK);
                
@@ -947,7 +971,7 @@ void loop()
                sendbuffer[23] = loggerstatus;
             }
             
-  //          uint8_t usberfolg = usb_rawhid_send((void*)sendbuffer, 100);
+  //          uint8_t usberfolg = RawHID.send((void*)sendbuffer, 100);
             sendbuffer[0] = 0;
          } // if sendbuffer[0] > 0
 

@@ -37,6 +37,14 @@
 
 #define ADC_TIMERDELAY  4800
 
+// hoststatus
+
+#define FIRSTRUN  7
+#define SEND_OK   1
+
+
+
+
 #define ADC_U_BIT 0 // ISR: U messen
 #define ADC_I_BIT 1 // ISR: I messen
 
