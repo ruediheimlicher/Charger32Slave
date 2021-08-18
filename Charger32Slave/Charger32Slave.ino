@@ -91,6 +91,7 @@ volatile uint8_t taskcode;
 
 // Charger
 volatile uint16_t                    messungcounter=0; // Anzahl messungen fortlaufend
+volatile uint16_t                    strommessungcounter=0;
 volatile uint16_t                     blockcounter = 0; // Block, in den gesichert werden soll, mit einem Offset von 1 (Block 0 ist header der SD).
 
 volatile uint16_t                    writedatacounter=0; // Anzahl mmc-writes fortlaufend
@@ -148,7 +149,7 @@ volatile uint16_t teensydatacounter = 0; //  Anzahl gespeicherter Messungen auf 
 //declare an eeprom array
 uint8_t   eeprom_kanalstatus_array[4];
 
-
+volatile uint16_t          startminute = 0;
 IntervalTimer              adcTimer;
 //volatile uint16_t          timerintervall = TIMERINTERVALL;
 volatile uint16_t         adctimerintervall = 1000;
@@ -158,7 +159,7 @@ IntervalTimer              stromTimer;
 // constants
 
 // bits von hoststatus
-#define TEENSYPRESENT      7
+#define MESSUNG_RUN      7
 #define MESSUNG_OK         6
 #define DOWNLOAD_OK        5
 #define USB_READ_OK        4
@@ -342,16 +343,17 @@ void loop()
    }// LOOPLED
    
    // MARK: MESSUNG_OK  
-   if (hoststatus & (1<<MESSUNG_OK) ) // Messung ausloesen
+   if (hoststatus & (1<<MESSUNG_OK) ) // Messung ausloesen 
    {
+      noInterrupts();
       hoststatus &= ~(1<<MESSUNG_OK);
       
       sendbuffer[0] = TEENSY_DATA;
-      adcstatus &= ~(1<<ADC_U_BIT);
-      noInterrupts();
+      //adcstatus &= ~(1<<ADC_U_BIT);
+      
       //batt_M = readKanal(ADC_M);
       batt_M = analogRead(ADC_M);
-      interrupts();
+      
       Serial.print(F("ADC batt_M "));
       Serial.print(batt_M);
       sendbuffer[U_M_L_BYTE + DATA_START_BYTE] = batt_M & 0x00FF;
@@ -364,53 +366,90 @@ void loop()
       sendbuffer[U_O_L_BYTE + DATA_START_BYTE] = batt_O & 0x00FF;
       sendbuffer[U_O_H_BYTE + DATA_START_BYTE] = (batt_O & 0xFF00)>>8;
       
-      adcstatus &= ~(1<<ADC_I_BIT);
+      //adcstatus &= ~(1<<ADC_I_BIT);
       curr_U = analogRead(ADC_SHUNT_U);
       curr_O = analogRead(ADC_SHUNT_O);
-      Serial.print(F(" ADC usbsendcounter: "));
-      Serial.print(usbsendcounter);
+ //    Serial.print(F(" ADC usbsendcounter: "));
+ //     Serial.print(usbsendcounter);
       sendbuffer[I_SHUNT_U_L_BYTE + DATA_START_BYTE] = curr_U & 0x00FF;
       sendbuffer[I_SHUNT_U_H_BYTE + DATA_START_BYTE] = (curr_U & 0xFF00)>>8;
       sendbuffer[I_SHUNT_O_L_BYTE + DATA_START_BYTE] = curr_O & 0x00FF;
       sendbuffer[I_SHUNT_O_H_BYTE + DATA_START_BYTE] = (curr_O & 0xFF00)>>8;
+      interrupts();
+      
       
       if(adcstatus & (1<<FIRSTRUN))
       {
          Serial.println(F(" FIRSTRUN "));
-         
          messungcounter = 0;
+         strommessungcounter = 0;
+         sendbuffer[DATACOUNT_LO_BYTE] = (messungcounter & 0x00FF);
+         sendbuffer[DATACOUNT_HI_BYTE] = ((messungcounter & 0xFF00)>>8);
+
          adcstatus &= ~(1<<FIRSTRUN);
-         
       }
+      if (hoststatus & (1<<MESSUNG_RUN))
+      {
+         messungcounter++;
+         sendbuffer[DATACOUNT_LO_BYTE] = (messungcounter & 0x00FF);
+         sendbuffer[DATACOUNT_HI_BYTE] = ((messungcounter & 0xFF00)>>8);
+         hoststatus |= (1<<SEND_OK);
+      }
+     // hoststatus |= (1<<SEND_OK);
       // messungcounter uebergeben
+      Serial.print(F(" strommessungcounter: "));
+      Serial.print(strommessungcounter);
       Serial.print(F(" messungcounter: "));
       Serial.println(messungcounter);
-      
-      sendbuffer[DATACOUNT_LO_BYTE] = (messungcounter & 0x00FF);
-      sendbuffer[DATACOUNT_HI_BYTE] = ((messungcounter & 0xFF00)>>8);
-      
-      messungcounter++;
+
+       
+      strommessungcounter++;
       
       sendbuffer[BLOCKOFFSETLO_BYTE] = blockcounter & 0x00FF; // Byte 3, 4
       sendbuffer[BLOCKOFFSETHI_BYTE] = (blockcounter & 0xFF00)>>8; // Nummer des geschriebenen Blocks hi
-      
+  /*    
        if (hoststatus & (1<<SEND_OK))
        {
-       senderfolg = RawHID.send((void*)sendbuffer, 100);
-       if (senderfolg > 0) 
-       {
-       Serial.print(F(" ADC packet "));
-       Serial.println(packetcount);
-       packetcount = packetcount + 1;
-       
-       } else {
-       Serial.println(F("Unable to transmit packet"));
+          hoststatus &= ~(1<<SEND_OK);
+          senderfolg = RawHID.send((void*)sendbuffer, 100);
+          if (senderfolg > 0) 
+          {
+             //Serial.print(F(" ADC packet "));
+             //Serial.println(packetcount);
+             packetcount = packetcount + 1;
+             
+          } else {
+             Serial.println(F("Unable to transmit packet"));
+          }
+          Serial.print(F("***  senderfolg: "));
+          Serial.println(senderfolg);
+          usbsendcounter++;
        }
-       Serial.print(F("***  senderfolg: "));
-       Serial.println(senderfolg);
-       usbsendcounter++;
-       }
+   */   
    } // if adcstatus
+   
+   
+   if (hoststatus & (1<<SEND_OK))
+   {
+      hoststatus &= ~(1<<SEND_OK);
+      senderfolg = RawHID.send((void*)sendbuffer, 100);
+      if (senderfolg > 0) 
+      {
+         //Serial.print(F(" ADC packet "));
+         //Serial.println(packetcount);
+         packetcount = packetcount + 1;
+         
+      } else {
+         Serial.println(F("Unable to transmit packet"));
+      }
+      Serial.print(F("***  senderfolg: "));
+      Serial.println(senderfolg);
+      usbsendcounter++;
+   }
+
+   
+   
+   
    
    if (sinceRecv > 2)
    {
@@ -429,33 +468,16 @@ void loop()
          {
             case STROM_SET:
             {
-               //Serial.println(("STROM_SET  0x88 "));
+               Serial.print(("STROM_SET  0x88 "));
                PWM_A = ((recvbuffer[STROM_A_H_BYTE]) << 8) | recvbuffer[STROM_A_L_BYTE] ;
                Serial.print("STROM PWM_A:");
                Serial.println(PWM_A); 
                analogWrite(23,PWM_A);
                analogWrite(A14,PWM_A);
                
-            }break;
-            case DEFAULT: // 
-            {
-               //lcd_clr_line(2);
-               sendbuffer[0] = DEFAULT;
-               //sendbuffer[3] = 0;
-               mmcwritecounter = 0;
-               //            code = WRITE_MMC_TEST;
-               //lcd_putc('c');
-               //lcd_puthex(code); // code
-               sd_status = recvbuffer[1]; // bit 0: sd mit testdaten beschreiben
-               //lcd_putc('-');
-               //lcd_puthex(sd_status); // code
-               //uint8_t usberfolg = usb_rawhid_send((void*)sendbuffer, 50);
-               //lcd_gotoxy(18,2);
-               //lcd_puthex(usberfolg);
-               // PWM fuer Channel A
                
             }break;
-               
+                 
                //   *********************************************************************            
                // MARK: READ_START  
                //   *********************************************************************                
@@ -483,8 +505,8 @@ void loop()
                //   ********************************************************************* 
             case MESSUNG_START:
             {
-               
                hoststatus |= (1<<SEND_OK); 
+               hoststatus |= (1<<MESSUNG_RUN); 
  //             clear_sendbuffer();
                cli();
                Serial.print(F("MESSUNG_START"));
@@ -503,18 +525,10 @@ void loop()
                linecounter=0;
                intervallcounter=0;
                
-               
-               /*
-                lcd_clr_line(1);
-                lcd_gotoxy(0,1);
-                lcd_putc('m');
-                lcd_putc(':');
-                lcd_puthex(code); // code
-                */
                usbstatus = taskcode;
+               
                sd_status = recvbuffer[1]; 
-               
-               
+                
                mmcwritecounter = 0; // Zaehler fuer Messungen auf MMC
                
                saveSDposition = 0; // Start der Messung immer am Anfang des Blocks
@@ -523,19 +537,14 @@ void loop()
                intervall = recvbuffer[TAKT_LO_BYTE] | (recvbuffer[TAKT_HI_BYTE]<<8);
                Serial.print(F("intervall "));
                Serial.print(intervall);
-               //lcd_gotoxy(14,2);
-               //lcd_putc('i');
-               //lcd_putc(':');
-               //lcd_putint(intervall);
-               
-               
+                
                //               abschnittnummer = recvbuffer[ABSCHNITT_BYTE]; // Abschnitt,
                
                blockcounter = recvbuffer[BLOCKOFFSETLO_BYTE] | (recvbuffer[BLOCKOFFSETHI_BYTE]<<8);
                Serial.print(F(" blockcounter "));
                Serial.println(blockcounter);
             
-               // startminute  = recvbuffer[STARTMINUTELO_BYTE] | (recvbuffer[STARTMINUTEHI_BYTE]<<8); // in SD-Header einsetzen
+                startminute  = recvbuffer[STARTMINUTELO_BYTE] | (recvbuffer[STARTMINUTEHI_BYTE]<<8); // in SD-Header einsetzen
                
                // Kanalstatus lesen. Wird beim Start der Messungen uebergeben
                
@@ -596,6 +605,7 @@ void loop()
             {
                Serial.println(F("MESSUNG_STOP "));
                cli();
+               hoststatus &= ~(1<<MESSUNG_RUN); 
                hoststatus |= (1<<SEND_OK); 
                clear_sendbuffer();
                sendbuffer[0] = MESSUNG_STOP;
@@ -643,6 +653,7 @@ void loop()
             case LOGGER_START:
             {
                clear_sendbuffer();
+               hoststatus |= (1<<SEND_OK);
                loggerstatus = 0;
                hoststatus &= ~(1<<USB_READ_OK);
                hoststatus &= ~(1<<MESSUNG_OK);
@@ -773,6 +784,7 @@ void loop()
             case LOGGER_CONT: // weiteres Paket lesen (Datenzeile)
             {
                clear_sendbuffer();
+               hoststatus |= (1<<SEND_OK);
                if (TEST)
                {
                   sendbuffer[0] = LOGGER_CONT;
@@ -954,7 +966,7 @@ void loop()
                sendbuffer[PACKETCOUNT_BYTE] = 0; // packetcount
                sendbuffer[BLOCKOFFSETLO_BYTE] = downloadblocknummer & 0x00FF;
                sendbuffer[BLOCKOFFSETHI_BYTE] = (downloadblocknummer & 0xFF00)>>8;
-               
+               hoststatus |= (1<<SEND_OK);
 
             }break;
          }//switch taskcode
@@ -973,7 +985,29 @@ void loop()
                sendbuffer[23] = loggerstatus;
             }
             
-  //          uint8_t usberfolg = RawHID.send((void*)sendbuffer, 100);
+  // send
+            if (hoststatus & (1<<SEND_OK))
+            {
+               hoststatus &= ~(1<<SEND_OK);
+               senderfolg = RawHID.send((void*)sendbuffer, 100);
+               if (senderfolg > 0) 
+               {
+                  Serial.print(F(" ADC messungcounter "));
+                  Serial.print(messungcounter);
+                  Serial.print(F(" ADC packet "));
+                  Serial.println(packetcount);
+                  packetcount = packetcount + 1;
+                  
+               } else {
+                  Serial.println(F("Unable to transmit packet"));
+               }
+               Serial.print(F("*** *** senderfolg: "));
+               Serial.println(senderfolg);
+               usbsendcounter++;
+            }
+
+            
+            // end send
             sendbuffer[0] = 0;
          } // if sendbuffer[0] > 0
 
