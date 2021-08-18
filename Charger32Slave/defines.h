@@ -101,8 +101,8 @@
 
 
 // Nur bei Messung_Start:
-//#define  STARTMINUTELO_BYTE   5
-//#define  STARTMINUTEHI_BYTE   6
+#define  STARTMINUTELO_BYTE   5
+#define  STARTMINUTEHI_BYTE   6
 #define BLOCK_ANZAHL_BYTE              9 // Nur bei LOGGER_START: anzahl zu lesender Blocks
 #define DOWNLOADBLOCKNUMMER_BYTE      10 // aktuelle nummer des downloadblocks
 
