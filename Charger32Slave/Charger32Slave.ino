@@ -44,6 +44,7 @@
 
 // Set parameters
 
+ADC *adc = new ADC(); // adc object
 
 // Include application, user and local libraries
 // !!! Help http://bit.ly/2CL22Qp
@@ -62,8 +63,8 @@ volatile uint16_t          adctimercounter = 0;
 
 volatile uint8_t           usbstatus=0x00;
 
-volatile uint8_t          senderfolg = 0;
-volatile uint8_t status=0;
+volatile uint8_t           senderfolg = 0;
+volatile uint8_t           status=0;
 
 volatile uint16_t           PWM_A=0;
 volatile uint16_t           PWM_B=0;
@@ -203,6 +204,24 @@ void slaveinit(void)
    
  //  pinMode(24, OUTPUT);// OC2A
 }
+
+void ADC_init(void) 
+{
+   emitter=0; // 
+   
+   adc->adc0->setAveraging(4); // set number of averages 
+   adc->adc0->setResolution(10); // set bits of resolution
+   adc->adc0->setConversionSpeed(ADC_CONVERSION_SPEED::LOW_SPEED);
+   adc->adc0->setSamplingSpeed(ADC_SAMPLING_SPEED::MED_SPEED);
+   adc->adc0->setReference(ADC_REFERENCE::REF_3V3);
+  // adc->adc0->enableInterrupts(ADC_0);
+   
+   
+//   delay(100);
+   
+   
+}
+
 
 void clear_sendbuffer(void)
 {
@@ -353,7 +372,6 @@ void loop()
       
       //batt_M = readKanal(ADC_M);
       batt_M = analogRead(ADC_M);
-      
       Serial.print(F("ADC batt_M "));
       Serial.print(batt_M);
       sendbuffer[U_M_L_BYTE + DATA_START_BYTE] = batt_M & 0x00FF;
@@ -426,7 +444,7 @@ void loop()
           usbsendcounter++;
        }
    */   
-   } // if adcstatus
+   } // if MESSUNG_OK
    
    
    if (hoststatus & (1<<SEND_OK))
