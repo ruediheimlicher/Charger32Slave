@@ -35,6 +35,9 @@
 #define ADC_SHUNT_U 16
 #define ADC_SHUNT_O 17
 
+#define ADC_TEMP_SOURCE 18
+#define ADC_TEMP_BATT 19
+
 #define ADC_TIMERDELAY  4800
 
 // hoststatus
@@ -137,6 +140,13 @@
 #define I_SHUNT_U_H_BYTE 21
 #define I_SHUNT_O_L_BYTE 22
 #define I_SHUNT_O_H_BYTE 23
+
+#define TEMP_SOURCE_L_BYTE 24
+#define TEMP_SOURCE_H_BYTE 25
+
+#define TEMP_BATT_L_BYTE 26
+#define TEMP_BATT_H_BYTE 27
+
 
 //OSZI
 

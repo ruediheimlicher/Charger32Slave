@@ -50,8 +50,6 @@ ADC *adc = new ADC(); // adc object
 // !!! Help http://bit.ly/2CL22Qp
 
 
-// Define structures and classes
-ADC *adc = new ADC(); // adc object
 
 
 // Define variables and constants
@@ -73,6 +71,9 @@ volatile uint16_t       batt_M = 0;
 volatile uint16_t       batt_O = 0;
 volatile uint16_t       curr_U = 0;
 volatile uint16_t       curr_O = 0;
+
+volatile uint16_t       temp_SOURCE = 0;
+volatile uint16_t       temp_BATT = 0;
 
 volatile uint16_t  sekundentimercounter = 0;
 volatile uint16_t adctimersekunde = 0;
@@ -190,6 +191,12 @@ void slaveinit(void)
    pinMode(ADC_M, INPUT);
    pinMode(ADC_O, INPUT);
 
+   pinMode(ADC_SHUNT_U, INPUT);
+   pinMode(ADC_SHUNT_O, INPUT);
+
+   pinMode(ADC_TEMP_SOURCE, INPUT);
+   pinMode(ADC_TEMP_BATT, INPUT);
+   
    //LCD
    pinMode(LCD_RSDS_PIN, OUTPUT);
    pinMode(LCD_ENABLE_PIN, OUTPUT);
@@ -207,7 +214,7 @@ void slaveinit(void)
 
 void ADC_init(void) 
 {
-   emitter=0; // 
+   
    
    adc->adc0->setAveraging(4); // set number of averages 
    adc->adc0->setResolution(10); // set bits of resolution
@@ -303,7 +310,8 @@ void setup()
    _delay_ms(100);
    adcTimer.begin(adctimerfunction,adctimerintervall); // 1ms
    lcd_clr_line(0);
-   analogWriteResolution(10);
+   ADC_init();
+//   analogWriteResolution(10);
    pinMode(A14,OUTPUT);
    
 
@@ -347,6 +355,16 @@ void loop()
          lcd_putc('T');
          lcd_puthex(taskcode);
          
+         lcd_gotoxy(0,2);
+         lcd_putc('S');
+         lcd_putc(':');
+         lcd_putint12(curr_U);
+         lcd_putc(' ');
+         lcd_putc('T');
+         lcd_putc(':');
+         lcd_putint12(temp_SOURCE);
+         
+         
      //    lcd_clr_line(3);
     //     lcd_gotoxy(0,3);
     //     lcd_putint12(usbrecvcounter);
@@ -371,7 +389,8 @@ void loop()
       //adcstatus &= ~(1<<ADC_U_BIT);
       
       //batt_M = readKanal(ADC_M);
-      batt_M = analogRead(ADC_M);
+ //     batt_M = analogRead(ADC_M);
+      batt_M =  adc->analogRead(ADC_M);
       Serial.print(F("ADC batt_M "));
       Serial.print(batt_M);
       sendbuffer[U_M_L_BYTE + DATA_START_BYTE] = batt_M & 0x00FF;
@@ -389,10 +408,25 @@ void loop()
       curr_O = analogRead(ADC_SHUNT_O);
  //    Serial.print(F(" ADC usbsendcounter: "));
  //     Serial.print(usbsendcounter);
-      sendbuffer[I_SHUNT_U_L_BYTE + DATA_START_BYTE] = curr_U & 0x00FF;
-      sendbuffer[I_SHUNT_U_H_BYTE + DATA_START_BYTE] = (curr_U & 0xFF00)>>8;
-      sendbuffer[I_SHUNT_O_L_BYTE + DATA_START_BYTE] = curr_O & 0x00FF;
-      sendbuffer[I_SHUNT_O_H_BYTE + DATA_START_BYTE] = (curr_O & 0xFF00)>>8;
+      sendbuffer[STROM_A_L_BYTE + DATA_START_BYTE] = curr_U & 0x00FF;
+      sendbuffer[STROM_A_H_BYTE + DATA_START_BYTE] = (curr_U & 0xFF00)>>8;
+  //    sendbuffer[I_SHUNT_O_L_BYTE + DATA_START_BYTE] = curr_O & 0x00FF;
+  //    sendbuffer[I_SHUNT_O_H_BYTE + DATA_START_BYTE] = (curr_O & 0xFF00)>>8;
+      
+      
+      
+      temp_SOURCE = analogRead(ADC_TEMP_SOURCE);
+      temp_BATT = analogRead(ADC_TEMP_BATT);
+      
+      sendbuffer[TEMP_SOURCE_L_BYTE + DATA_START_BYTE] = temp_SOURCE & 0x00FF;
+      sendbuffer[TEMP_SOURCE_H_BYTE + DATA_START_BYTE] = (temp_SOURCE & 0xFF00)>>8;
+      sendbuffer[TEMP_BATT_L_BYTE + DATA_START_BYTE] = temp_BATT & 0x00FF;
+      sendbuffer[TEMP_BATT_H_BYTE + DATA_START_BYTE] = (temp_BATT & 0xFF00)>>8;
+    
+     
+      
+      
+      
       interrupts();
       
       
