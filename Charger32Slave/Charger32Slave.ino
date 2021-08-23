@@ -395,7 +395,7 @@ void loop()
       Serial.print(batt_M);
       sendbuffer[U_M_L_BYTE + DATA_START_BYTE] = batt_M & 0x00FF;
       sendbuffer[U_M_H_BYTE + DATA_START_BYTE] = (batt_M & 0xFF00)>>8;
-      
+      sendbuffer[DEVICE_BYTE + DATA_START_BYTE] |= (1<<SPANNUNG_ID);
       batt_O = analogRead(ADC_O);
       Serial.print(F(" ADC batt_O "));
       Serial.print(batt_O);
@@ -410,6 +410,7 @@ void loop()
  //     Serial.print(usbsendcounter);
       sendbuffer[STROM_A_L_BYTE + DATA_START_BYTE] = curr_U & 0x00FF;
       sendbuffer[STROM_A_H_BYTE + DATA_START_BYTE] = (curr_U & 0xFF00)>>8;
+      sendbuffer[DEVICE_BYTE + DATA_START_BYTE] |= (1<<STROM_ID);
   //    sendbuffer[I_SHUNT_O_L_BYTE + DATA_START_BYTE] = curr_O & 0x00FF;
   //    sendbuffer[I_SHUNT_O_H_BYTE + DATA_START_BYTE] = (curr_O & 0xFF00)>>8;
       
@@ -422,7 +423,7 @@ void loop()
       sendbuffer[TEMP_SOURCE_H_BYTE + DATA_START_BYTE] = (temp_SOURCE & 0xFF00)>>8;
       sendbuffer[TEMP_BATT_L_BYTE + DATA_START_BYTE] = temp_BATT & 0x00FF;
       sendbuffer[TEMP_BATT_H_BYTE + DATA_START_BYTE] = (temp_BATT & 0xFF00)>>8;
-    
+      sendbuffer[DEVICE_BYTE + DATA_START_BYTE] |= (1<<TEMP_ID);
      
       
       

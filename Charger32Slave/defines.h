@@ -147,6 +147,12 @@
 #define TEMP_BATT_L_BYTE 26
 #define TEMP_BATT_H_BYTE 27
 
+#define DEVICE_BYTE 0
+// Bits fuer DEVICE_BYTE (byte auf 0 gesetzt)
+#define  SPANNUNG_ID        4 // Bit fuer Batteriespannung
+#define  STROM_ID          5 // Bit fuer Strom
+#define  TEMP_ID           6 // Bit fuer Temperatur
+
 
 //OSZI
 
