@@ -27,12 +27,12 @@
 /*
 #define ADC_M  0
 #define ADC_O  1
-#define ADC_SHUNT_U 3
+#define #define ADC_SHUNT 16 3
 #define ADC_SHUNT_O 4
 */
 #define ADC_M  A0
 #define ADC_O  15
-#define ADC_SHUNT_U 16
+#define ADC_SHUNT 16 
 #define ADC_SHUNT_O 17
 
 #define ADC_TEMP_SOURCE 18
@@ -46,7 +46,7 @@
 #define SEND_OK   1
 
 
-
+#define TEENSYVREF  3.320  // VRef intern
 
 #define ADC_U_BIT 0 // ISR: U messen
 #define ADC_I_BIT 1 // ISR: I messen
@@ -55,6 +55,12 @@
 #define U_OFF  2.5
 #define U_MAX  4.2
 
+#define STROM_HI  1000 // mA
+#define STROM_LO  50   // mA
+#define STROM_REP  100 // Reparaturstrom bei Unterspannung
+
+#define SHUNT_OFFSET 17    // Ruhestrom nach ADC
+
 #define STOM_PWM  23
 
 // USB
@@ -62,7 +68,7 @@
 
 
 //USB Bytes 
-#define TASK_BYTE        0
+#define TASK_BYTE          0
 #define DEVICECOUNT_BYTE   3
 
 
@@ -121,6 +127,11 @@
 
 //MARK: Charger Konstanten
 
+//Bits von loadstatus
+#define BATT_MAX_BIT  = 0
+#define BATT_MIN_BIT  = 1
+#define BATT_DOWN_BIT =  2
+
 // buffer
 #define USB_DATENBREITE 64
 
@@ -144,12 +155,12 @@
 #define TEMP_SOURCE_L_BYTE 24
 #define TEMP_SOURCE_H_BYTE 25
 
-#define TEMP_BATT_L_BYTE 26
-#define TEMP_BATT_H_BYTE 27
+#define TEMP_BATT_L_BYTE   26
+#define TEMP_BATT_H_BYTE   27
 
-#define DEVICE_BYTE 0
+#define DEVICE_BYTE        0
 // Bits fuer DEVICE_BYTE (byte auf 0 gesetzt)
-#define  SPANNUNG_ID        4 // Bit fuer Batteriespannung
+#define  SPANNUNG_ID       4 // Bit fuer Batteriespannung
 #define  STROM_ID          5 // Bit fuer Strom
 #define  TEMP_ID           6 // Bit fuer Temperatur
 

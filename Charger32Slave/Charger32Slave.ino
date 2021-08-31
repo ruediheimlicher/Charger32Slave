@@ -61,16 +61,23 @@ volatile uint16_t          adctimercounter = 0;
 
 volatile uint8_t           usbstatus=0x00;
 
+volatile uint8_t           loadstatus=0x00;
+
 volatile uint8_t           senderfolg = 0;
 volatile uint8_t           status=0;
 
 volatile uint16_t           PWM_A=0;
 volatile uint16_t           PWM_B=0;
 
+uint32_t batt_M_Spannung  = 0;
+uint32_t batt_O_Spannung  = 0;
+
 volatile uint16_t       batt_M = 0;
 volatile uint16_t       batt_O = 0;
 volatile uint16_t       curr_U = 0;
 volatile uint16_t       curr_O = 0;
+
+volatile uint16_t       curr_A = 0;
 
 volatile uint16_t       temp_SOURCE = 0;
 volatile uint16_t       temp_BATT = 0;
@@ -191,7 +198,7 @@ void slaveinit(void)
    pinMode(ADC_M, INPUT);
    pinMode(ADC_O, INPUT);
 
-   pinMode(ADC_SHUNT_U, INPUT);
+   pinMode(ADC_SHUNT, INPUT);
    pinMode(ADC_SHUNT_O, INPUT);
 
    pinMode(ADC_TEMP_SOURCE, INPUT);
@@ -203,7 +210,7 @@ void slaveinit(void)
    pinMode(LCD_CLOCK_PIN, OUTPUT);
 
    pinMode(LADESTROM_PWM_A, OUTPUT);
-   pinMode(LADESTROM_PWM_A, OUTPUT);
+   pinMode(LADESTROM_PWM_B, OUTPUT);
    
    
 //   pinMode(25, OUTPUT);// OC1A
@@ -313,9 +320,171 @@ void setup()
    ADC_init();
 //   analogWriteResolution(10);
    pinMode(A14,OUTPUT);
-   
+   analogWriteResolution(10);
 
 }
+
+void f_to_a(float n, char *res, int afterpoint)
+{
+    // Extract integer part
+    int ipart = (int)n;
+   Serial.print(F("f_to_a ipart: "));
+   Serial.print(ipart);
+    // Extract floating part
+    float fpart = n - (float)ipart;
+   
+   Serial.print(F(" fpart: "));
+   Serial.print(fpart);
+
+    // convert integer part to string
+    int i = itoa(ipart, res, 0);
+
+    // check for display option after point
+    if (afterpoint != 0)
+    {
+        res[i] = '.';  // add dot
+
+        // Get the value of fraction part upto given no.
+        // of points after dot. The third parameter is needed
+        // to handle cases like 233.007
+        fpart = fpart * pow(10, afterpoint);
+
+        itoa((int)fpart, res + i + 1, afterpoint);
+    }
+}
+void int_to_dispstr_tux(uint16_t inum,char *outbuf,int8_t decimalpoint_pos)
+{
+   // Convert an integer which is representing a float into a string.
+   // Our display is always 4 digits long (including one
+   // decimal point position). decimalpoint_pos defines
+   // after how many positions from the right we set the decimal point.
+   // The resulting string is fixed width and padded with leading space.
+   //
+   // decimalpoint_pos=2 sets the decimal point after 2 pos from the right:
+   // e.g 74 becomes "0.74"
+   // The integer should not be larger than 999.
+   // The integer must be a positive number.
+   // decimalpoint_pos can be 0, 1 or 2
+   
+   int8_t i,j;
+   char chbuf[8];
+   itoa(inum,chbuf,10); // convert integer to string
+ //  Serial.print(F("int_to_dispstr"));
+   // Serial.print(F(" chbuf: "));
+   //Serial.println(chbuf);
+   i=strlen(chbuf);
+ //  Serial.print(F(" strlen: "));
+ //  Serial.println(i);
+   
+   if (i>3) i=3; //overflow protection
+   strcpy(outbuf,"   0"); //decimalpoint_pos==0
+   if (decimalpoint_pos==1) strcpy(outbuf," 0.0");
+   if (decimalpoint_pos==2) strcpy(outbuf,"0.00");
+   uint8_t l = 4;
+   j=l;
+   while(i){
+      outbuf[j-1]=chbuf[i-1];
+      i--;
+      j--;
+      if (j==l-decimalpoint_pos)
+      {
+         // jump over the pre-set dot
+         j--;
+      }
+   }
+}
+
+void int_to_dispstr(uint16_t inum,char *outbuf,int8_t decimalpoint_pos)
+{
+        int8_t i,j;
+        char chbuf[10];
+        itoa(inum,chbuf,10); // convert integer to string
+  // Serial.print(F("int_to_dispstr"));
+  // Serial.print(F(" chbuf: "));
+   //Serial.println(chbuf);
+        i=strlen(chbuf);
+//   Serial.print(F(" strlen: "));
+//   Serial.println(i);
+  
+        if (i>4) i=4; //overflow protection
+   
+        strcpy(outbuf,"    0"); //decimalpoint_pos==0
+        if (decimalpoint_pos==1) strcpy(outbuf,"  0.0");
+        if (decimalpoint_pos==2) strcpy(outbuf," 0.00");
+         if (decimalpoint_pos==3) strcpy(outbuf,"0.000");
+         uint8_t l = 5;
+        j=l;
+        while(i){
+                outbuf[j-1]=chbuf[i-1];
+                i--;
+                j--;
+                if (j==l-decimalpoint_pos)
+                {
+                        // jump over the pre-set dot
+                        j--;
+                }
+        }
+}
+
+void int_to_floatstr(uint16_t inum,char *outbuf,int8_t decimalpoint_pos, uint8_t maxdigit)
+{
+   int8_t i,j,k;
+   char chbuf[8];
+   itoa(inum,chbuf,10); // convert integer to string
+   /*
+   Serial.print(F("int_to_dispstr"));
+   Serial.print(F(" decimalpoint_pos: "));
+   Serial.print(decimalpoint_pos);
+   Serial.print(F(" maxdigit: "));
+   Serial.print(maxdigit);
+  */
+   i=strlen(chbuf);
+ //  Serial.print(F(" strlen: "));
+ //  Serial.println(i);
+   
+   if (i>(maxdigit-1)) i=maxdigit-1; //overflow protection
+   
+   /*
+   for(k=0;k<maxdigit;k++)
+   {
+      //strcat(outbuf,' ');
+      outbuf[k] = ' ';
+   }
+  */
+   
+  // strcat(outbuf,'\0');
+   //strcpy(outbuf,"   0"); //decimalpoint_pos==0
+   
+   if (maxdigit==2) strcpy(outbuf," 0");
+   if (maxdigit==3) strcpy(outbuf,"  0");
+   if (maxdigit==4) strcpy(outbuf,"   0");
+   if (maxdigit==5) strcpy(outbuf,"    0");
+   if (maxdigit==6) strcpy(outbuf,"     0");
+  
+   /*
+    if (decimalpoint_pos==1) strcpy(outbuf,"   0.0");
+    if (decimalpoint_pos==2) strcpy(outbuf,"  0.00");
+    if (decimalpoint_pos==3) strcpy(outbuf," 0.000");
+    if (decimalpoint_pos==4) strcpy(outbuf,"0.0000");
+    */
+   uint8_t l = maxdigit;
+   j=l;
+   while(i)
+   {
+      outbuf[j-1]=chbuf[i-1];
+      i--;
+      j--;
+      if (j==l-decimalpoint_pos)
+      {
+         outbuf[j-1]='.';
+         // jump over the pre-set dot
+         j--;
+      }
+   }
+}
+
+
+
 elapsedMillis sinceRecv;
 // Add loop code
 void loop()
@@ -340,6 +509,8 @@ void loop()
          lcd_putc(' ');
          lcd_puthex(recvbuffer[TASK_BYTE]);           
 
+         //Spannung = wert * TEENSYVREF / 1024
+         
          lcd_gotoxy(16,0);
          lcd_putint12(adctimersekunde);
 
@@ -358,7 +529,7 @@ void loop()
          lcd_gotoxy(0,2);
          lcd_putc('S');
          lcd_putc(':');
-         lcd_putint12(curr_U);
+         lcd_putint12(curr_A);
          lcd_putc(' ');
          lcd_putc('T');
          lcd_putc(':');
@@ -366,8 +537,70 @@ void loop()
          
          
      //    lcd_clr_line(3);
-    //     lcd_gotoxy(0,3);
-    //     lcd_putint12(usbrecvcounter);
+         uint16_t TEENSYVREF_Int = TEENSYVREF*100;
+         lcd_gotoxy(0,3);
+ //        lcd_putint12(TEENSYVREF_Int);
+ //        lcd_putc(' ');
+
+  //       lcd_putint12(batt_M);
+  //       lcd_putc(' ');
+         batt_M_Spannung = (((batt_M  * TEENSYVREF_Int) )* 145 )>>10 ;
+    //     Serial.print(F("\nbatt_M: "));
+     //    Serial.print(batt_M_Spannung);
+     //    Serial.print(F(" batt_M_Spannung: "));
+    //     Serial.println(batt_M_Spannung);
+ 
+         char battbufM[8];
+         itoa(batt_M_Spannung,battbufM,10); // convert integer to string
+   //      lcd_puts(battbufM);
+   //      lcd_putc(' ');
+         char batt_StringM[8]; 
+         int_to_dispstr(batt_M_Spannung,batt_StringM,2);
+     //    Serial.print(F("int_to_dispstr M: "));
+      //   Serial.println(batt_StringM);
+  
+         //lcd_puts(batt_String);
+         
+         char float_StringM[8]; 
+         int_to_floatstr(batt_M_Spannung,float_StringM,2,4);
+         //Serial.print(F("int_to_floatstr O: "));
+         //Serial.println(float_StringM);
+
+         lcd_puts("UA: ");
+         lcd_puts(float_StringM);
+         //lcd_putc('*');
+ 
+         lcd_putc(' ');
+         // Batt O
+         batt_O_Spannung = (((batt_O  * TEENSYVREF_Int) )* 145 )>>10 ;
+         //Serial.print(F("\nbatt_O: "));
+         //Serial.print(batt_O);
+         //Serial.print(F("  batt_O_Spannung: "));
+         //Serial.println(batt_O_Spannung);
+ 
+         char battbufO[8];
+         itoa(batt_M_Spannung,battbufO,10); // convert integer to string
+   //      lcd_puts(battbufM);
+   //      lcd_putc(' ');
+         char batt_StringO[8]; 
+         int_to_dispstr(batt_O_Spannung,batt_StringO,2);
+         //Serial.print(F("int_to_dispstr O: "));
+         //Serial.println(batt_StringO);
+  
+         //lcd_puts(batt_String);
+         
+         char float_StringO[8]; 
+         int_to_floatstr(batt_O_Spannung,float_StringO,2,4);
+         //Serial.print(F("int_to_floatstr O: "));
+         //Serial.println(float_StringO);
+
+         lcd_puts("UO: ");
+         lcd_puts(float_StringO);
+         //lcd_putc('*');
+ 
+         
+         
+    //     lcd_putint16(batt_M_Spannung);
     //     lcd_putc(' ');
     //     lcd_puthex(senderfolg);
    //      lcd_putc(' ');
@@ -389,8 +622,13 @@ void loop()
       //adcstatus &= ~(1<<ADC_U_BIT);
       
       //batt_M = readKanal(ADC_M);
- //     batt_M = analogRead(ADC_M);
+ //   batt_M = analogRead(ADC_M);
       batt_M =  adc->analogRead(ADC_M);
+      
+      uint16_t TEENSYVREF_Int = TEENSYVREF*100;
+      
+      batt_M_Spannung = (batt_M  * TEENSYVREF_Int) ;
+      
       Serial.print(F("ADC batt_M "));
       Serial.print(batt_M);
       sendbuffer[U_M_L_BYTE + DATA_START_BYTE] = batt_M & 0x00FF;
@@ -398,18 +636,22 @@ void loop()
       sendbuffer[DEVICE_BYTE + DATA_START_BYTE] |= (1<<SPANNUNG_ID);
       batt_O = analogRead(ADC_O);
       Serial.print(F(" ADC batt_O "));
-      Serial.print(batt_O);
+      Serial.println(batt_O);
       
       sendbuffer[U_O_L_BYTE + DATA_START_BYTE] = batt_O & 0x00FF;
       sendbuffer[U_O_H_BYTE + DATA_START_BYTE] = (batt_O & 0xFF00)>>8;
       
       //adcstatus &= ~(1<<ADC_I_BIT);
-      curr_U = analogRead(ADC_SHUNT_U);
-      curr_O = analogRead(ADC_SHUNT_O);
+     // curr_U = analogRead(#define ADC_SHUNT 16) - SHUNT_OFFSET;
+      //curr_O = analogRead(ADC_SHUNT_O) - SHUNT_OFFSET;
+      
+      curr_A = adc->analogRead(ADC_SHUNT);
+      
+      
  //    Serial.print(F(" ADC usbsendcounter: "));
  //     Serial.print(usbsendcounter);
-      sendbuffer[STROM_A_L_BYTE + DATA_START_BYTE] = curr_U & 0x00FF;
-      sendbuffer[STROM_A_H_BYTE + DATA_START_BYTE] = (curr_U & 0xFF00)>>8;
+      sendbuffer[STROM_A_L_BYTE + DATA_START_BYTE] = curr_A & 0x00FF;
+      sendbuffer[STROM_A_H_BYTE + DATA_START_BYTE] = (curr_A & 0xFF00)>>8;
       sendbuffer[DEVICE_BYTE + DATA_START_BYTE] |= (1<<STROM_ID);
   //    sendbuffer[I_SHUNT_O_L_BYTE + DATA_START_BYTE] = curr_O & 0x00FF;
   //    sendbuffer[I_SHUNT_O_H_BYTE + DATA_START_BYTE] = (curr_O & 0xFF00)>>8;
@@ -425,11 +667,7 @@ void loop()
       sendbuffer[TEMP_BATT_H_BYTE + DATA_START_BYTE] = (temp_BATT & 0xFF00)>>8;
       sendbuffer[DEVICE_BYTE + DATA_START_BYTE] |= (1<<TEMP_ID);
      
-      
-      
-      
       interrupts();
-      
       
       if(adcstatus & (1<<FIRSTRUN))
       {

@@ -23,6 +23,8 @@
  */
 
 #include "lcd.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 #define DELTA 0
 
@@ -510,8 +512,56 @@ void lcd_puthex(uint8_t zahl)
    lcd_puts(string);
 }
 
+/*
+ char str_volts[15]; // to store the float-to-string converted value
+ lcd_printf("Volts: %s ",dtostrf(volts, 4, 2, str_volts));//display on LCD
 
+ */
+ 
+void lcd_putfloat(uint16_t wert,uint8_t stellen, uint8_t len)
+{
+   uint8_t i=0 ; 
+   char floatString[len+1]; 
+   
+   //uint16_t rest = wert % 10;
+   uint8_t pos = len;
+   for(i = 0; i < len; i++)
+        {
+           
+           floatString[len -1 - i] = char((wert % 10)+'0');
+         wert /= 10;
+        } 
+   lcd_putc(' ');
+   lcd_puts(floatString);
 
+   
+
+}
+
+void ftoa(float n, char *res, int afterpoint)
+{
+    // Extract integer part
+    int ipart = (int)n;
+
+    // Extract floating part
+    float fpart = n - (float)ipart;
+
+    // convert integer part to string
+    int i = itoa(ipart, res, 0);
+
+    // check for display option after point
+    if (afterpoint != 0)
+    {
+        res[i] = '.';  // add dot
+
+        // Get the value of fraction part upto given no.
+        // of points after dot. The third parameter is needed
+        // to handle cases like 233.007
+        fpart = fpart * pow(10, afterpoint);
+
+        itoa((int)fpart, res + i + 1, afterpoint);
+    }
+}
 
 void lcd_put_frac(char* string, uint8_t start, uint8_t komma, uint8_t frac) 
 {
@@ -523,7 +573,8 @@ void lcd_put_frac(char* string, uint8_t start, uint8_t komma, uint8_t frac)
    if (string[0]=='-') lcd_putc('-'); else lcd_putc(' ');
    
    // Vorkommastellen ohne führende Nullen ausgeben
-   for(i=start; i;i--) {
+   for(i=start; i;i--) 
+   {
       if (flag==1 || string[i]!='0') {
          lcd_putc(string[i]);
          flag = 1;

@@ -136,6 +136,9 @@ void lcd_put_zeit(uint8_t minuten, uint8_t stunden);
 void lcd_put_wochentag(uint8_t wd);
 void lcd_put_temperatur(uint16_t temperatur);
 void lcd_put_tempAbMinus20(uint16_t temperatur);
-
-
+void r_itoa16(int16_t zahl, char* string);
+void r_itoa(int32_t zahl, char* string) ;
+void lcd_put_frac(char* string, uint8_t start, uint8_t komma, uint8_t frac);
+void lcd_putfloat(uint16_t wert,uint8_t stellen, uint8_t len);
+void ftoa(float n, char *res, int afterpoint);
 #endif /* lcd_h */
