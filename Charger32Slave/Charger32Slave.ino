@@ -72,6 +72,10 @@ volatile uint16_t           PWM_B=0;
 uint32_t batt_M_Spannung  = 0;
 uint32_t batt_O_Spannung  = 0;
 
+volatile uint16_t           batt_MIN_raw=0;
+volatile uint32_t           batt_MAX_raw=0;
+volatile uint16_t           batt_OFF_raw=0;
+
 volatile uint16_t       batt_M = 0;
 volatile uint16_t       batt_O = 0;
 volatile uint16_t       curr_U = 0;
@@ -259,7 +263,7 @@ void init_analog(void)
 {
     analogWriteFrequency(4, 375000);
    
-   adc->adc0->setAveraging(2); // set number of averages 
+   adc->adc0->setAveraging(4); // set number of averages 
    adc->adc0->setResolution(12); // set bits of resolution
    adc->adc0->setConversionSpeed(ADC_CONVERSION_SPEED::LOW_SPEED);
    adc->adc0->setSamplingSpeed(ADC_SAMPLING_SPEED::MED_SPEED);
@@ -322,6 +326,10 @@ void setup()
    pinMode(A14,OUTPUT);
    analogWriteResolution(10);
 
+//   batt_MAX_raw = (U_MAX <<4) / (TEENSYVREF * 100)/ADC_U_FAKTOR;
+   volatile uint16_t           batt_MAX_raw=0;
+   volatile uint16_t           batt_OFF_raw=0;
+   
 }
 
 void f_to_a(float n, char *res, int afterpoint)
@@ -544,11 +552,11 @@ void loop()
 
   //       lcd_putint12(batt_M);
   //       lcd_putc(' ');
-         batt_M_Spannung = (((batt_M  * TEENSYVREF_Int) )* 145 )>>10 ;
-    //     Serial.print(F("\nbatt_M: "));
-     //    Serial.print(batt_M_Spannung);
-     //    Serial.print(F(" batt_M_Spannung: "));
-    //     Serial.println(batt_M_Spannung);
+         batt_M_Spannung = (((batt_M  * TEENSYVREF_Int) )* ADC_U_FAKTOR )>>10 ;
+         Serial.print(F("\nbatt_M: "));
+         Serial.print(batt_M_Spannung);
+         Serial.print(F(" batt_M_Spannung: "));
+         Serial.println(batt_M_Spannung);
  
          char battbufM[8];
          itoa(batt_M_Spannung,battbufM,10); // convert integer to string
@@ -563,6 +571,7 @@ void loop()
          
          char float_StringM[8]; 
          int_to_floatstr(batt_M_Spannung,float_StringM,2,4);
+         
          //Serial.print(F("int_to_floatstr O: "));
          //Serial.println(float_StringM);
 
@@ -572,7 +581,7 @@ void loop()
  
          lcd_putc(' ');
          // Batt O
-         batt_O_Spannung = (((batt_O  * TEENSYVREF_Int) )* 145 )>>10 ;
+         batt_O_Spannung = (((batt_O  * TEENSYVREF_Int) )* ADC_U_FAKTOR )>>10 ; // ADC_U_FAKTOR: Umrechnung aus ADC 10bit, Teensy ref 3.3
          //Serial.print(F("\nbatt_O: "));
          //Serial.print(batt_O);
          //Serial.print(F("  batt_O_Spannung: "));
@@ -615,48 +624,46 @@ void loop()
    // MARK: MESSUNG_OK  
    if (hoststatus & (1<<MESSUNG_OK) ) // Messung ausloesen 
    {
+     
       noInterrupts();
+      
+//      analogWrite(A14,PWM_A);
+      
       hoststatus &= ~(1<<MESSUNG_OK);
       
       sendbuffer[0] = TEENSY_DATA;
       //adcstatus &= ~(1<<ADC_U_BIT);
       
       //batt_M = readKanal(ADC_M);
- //   batt_M = analogRead(ADC_M);
+      //   batt_M = analogRead(ADC_M);
       batt_M =  adc->analogRead(ADC_M);
       
       uint16_t TEENSYVREF_Int = TEENSYVREF*100;
       
       batt_M_Spannung = (batt_M  * TEENSYVREF_Int) ;
       
-      Serial.print(F("ADC batt_M "));
-      Serial.print(batt_M);
       sendbuffer[U_M_L_BYTE + DATA_START_BYTE] = batt_M & 0x00FF;
       sendbuffer[U_M_H_BYTE + DATA_START_BYTE] = (batt_M & 0xFF00)>>8;
       sendbuffer[DEVICE_BYTE + DATA_START_BYTE] |= (1<<SPANNUNG_ID);
       batt_O = analogRead(ADC_O);
-      Serial.print(F(" ADC batt_O "));
-      Serial.println(batt_O);
       
       sendbuffer[U_O_L_BYTE + DATA_START_BYTE] = batt_O & 0x00FF;
       sendbuffer[U_O_H_BYTE + DATA_START_BYTE] = (batt_O & 0xFF00)>>8;
       
       //adcstatus &= ~(1<<ADC_I_BIT);
-     // curr_U = analogRead(#define ADC_SHUNT 16) - SHUNT_OFFSET;
+      // curr_U = analogRead(#define ADC_SHUNT 16) - SHUNT_OFFSET;
       //curr_O = analogRead(ADC_SHUNT_O) - SHUNT_OFFSET;
       
-      curr_A = adc->analogRead(ADC_SHUNT);
+      curr_A = adc->analogRead(ADC_SHUNT); // normiert auf Masse
       
       
- //    Serial.print(F(" ADC usbsendcounter: "));
- //     Serial.print(usbsendcounter);
+      //    Serial.print(F(" ADC usbsendcounter: "));
+      //     Serial.print(usbsendcounter);
       sendbuffer[STROM_A_L_BYTE + DATA_START_BYTE] = curr_A & 0x00FF;
       sendbuffer[STROM_A_H_BYTE + DATA_START_BYTE] = (curr_A & 0xFF00)>>8;
       sendbuffer[DEVICE_BYTE + DATA_START_BYTE] |= (1<<STROM_ID);
-  //    sendbuffer[I_SHUNT_O_L_BYTE + DATA_START_BYTE] = curr_O & 0x00FF;
-  //    sendbuffer[I_SHUNT_O_H_BYTE + DATA_START_BYTE] = (curr_O & 0xFF00)>>8;
-      
-      
+      //    sendbuffer[I_SHUNT_O_L_BYTE + DATA_START_BYTE] = curr_O & 0x00FF;
+      //    sendbuffer[I_SHUNT_O_H_BYTE + DATA_START_BYTE] = (curr_O & 0xFF00)>>8;
       
       temp_SOURCE = analogRead(ADC_TEMP_SOURCE);
       temp_BATT = analogRead(ADC_TEMP_BATT);
@@ -666,8 +673,32 @@ void loop()
       sendbuffer[TEMP_BATT_L_BYTE + DATA_START_BYTE] = temp_BATT & 0x00FF;
       sendbuffer[TEMP_BATT_H_BYTE + DATA_START_BYTE] = (temp_BATT & 0xFF00)>>8;
       sendbuffer[DEVICE_BYTE + DATA_START_BYTE] |= (1<<TEMP_ID);
-     
+      
       interrupts();
+      
+      Serial.print(F("ADC batt_M "));
+      Serial.print(batt_M);
+      
+      Serial.print(F(" ADC batt_O "));
+      Serial.print(batt_O);
+      
+      Serial.print(F(" PWM_A: "));
+      Serial.print(PWM_A);
+
+      Serial.print(F(" curr_A: "));
+      Serial.print(curr_A);
+      
+      
+      if (curr_A < 20)
+      {
+         Serial.print(F(" ***"));
+      }
+      else 
+      {
+         Serial.print(F("    "));
+      }
+      
+       
       
       if(adcstatus & (1<<FIRSTRUN))
       {
@@ -676,7 +707,7 @@ void loop()
          strommessungcounter = 0;
          sendbuffer[DATACOUNT_LO_BYTE] = (messungcounter & 0x00FF);
          sendbuffer[DATACOUNT_HI_BYTE] = ((messungcounter & 0xFF00)>>8);
-
+         
          adcstatus &= ~(1<<FIRSTRUN);
       }
       if (hoststatus & (1<<MESSUNG_RUN))
@@ -686,37 +717,40 @@ void loop()
          sendbuffer[DATACOUNT_HI_BYTE] = ((messungcounter & 0xFF00)>>8);
          hoststatus |= (1<<SEND_OK);
       }
-     // hoststatus |= (1<<SEND_OK);
+      // hoststatus |= (1<<SEND_OK);
       // messungcounter uebergeben
       Serial.print(F(" strommessungcounter: "));
       Serial.print(strommessungcounter);
       Serial.print(F(" messungcounter: "));
       Serial.println(messungcounter);
-
-       
+      
+      
       strommessungcounter++;
       
       sendbuffer[BLOCKOFFSETLO_BYTE] = blockcounter & 0x00FF; // Byte 3, 4
       sendbuffer[BLOCKOFFSETHI_BYTE] = (blockcounter & 0xFF00)>>8; // Nummer des geschriebenen Blocks hi
-  /*    
+      
+      //   if (batt_M > 
+      
+      /*    
        if (hoststatus & (1<<SEND_OK))
        {
-          hoststatus &= ~(1<<SEND_OK);
-          senderfolg = RawHID.send((void*)sendbuffer, 100);
-          if (senderfolg > 0) 
-          {
-             //Serial.print(F(" ADC packet "));
-             //Serial.println(packetcount);
-             packetcount = packetcount + 1;
-             
-          } else {
-             Serial.println(F("Unable to transmit packet"));
-          }
-          Serial.print(F("***  senderfolg: "));
-          Serial.println(senderfolg);
-          usbsendcounter++;
+       hoststatus &= ~(1<<SEND_OK);
+       senderfolg = RawHID.send((void*)sendbuffer, 100);
+       if (senderfolg > 0) 
+       {
+       //Serial.print(F(" ADC packet "));
+       //Serial.println(packetcount);
+       packetcount = packetcount + 1;
+       
+       } else {
+       Serial.println(F("Unable to transmit packet"));
        }
-   */   
+       Serial.print(F("***  senderfolg: "));
+       Serial.println(senderfolg);
+       usbsendcounter++;
+       }
+       */   
    } // if MESSUNG_OK
    
    
@@ -733,8 +767,8 @@ void loop()
       } else {
          Serial.println(F("Unable to transmit packet"));
       }
-      Serial.print(F("***  senderfolg: "));
-      Serial.println(senderfolg);
+  //    Serial.print(F("***  senderfolg: "));
+  //    Serial.println(senderfolg);
       usbsendcounter++;
    }
 

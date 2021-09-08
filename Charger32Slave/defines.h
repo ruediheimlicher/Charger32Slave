@@ -55,11 +55,22 @@
 #define U_OFF  2.5
 #define U_MAX  4.2
 
+#define RAW_U_FAKTOR
+#define BATT_MIN_RAW 1234 // Wert fuer Vergleich mit ADC
+#define BATT_OFF_RAW 1234 
+#define BATT_MAX_RAW 1234 
+
 #define STROM_HI  1000 // mA
 #define STROM_LO  50   // mA
 #define STROM_REP  100 // Reparaturstrom bei Unterspannung
 
+#define STROM_FAKTOR 1080 // 
+
+
 #define SHUNT_OFFSET 17    // Ruhestrom nach ADC
+
+#define ADC_U_FAKTOR 145
+
 
 #define STOM_PWM  23
 
