@@ -79,7 +79,7 @@ volatile uint16_t           batt_OFF_raw=0;
 volatile uint16_t       batt_M = 0;
 volatile uint16_t       batt_O = 0;
 volatile uint16_t       curr_U = 0;
-volatile uint16_t       curr_O = 0;
+volatile uint16_t       curr_B = 0;
 
 volatile uint16_t       curr_A = 0;
 
@@ -539,6 +539,11 @@ void loop()
          lcd_putc(':');
          lcd_putint12(curr_A);
          lcd_putc(' ');
+         lcd_putc('B');
+         lcd_putc(':');
+         lcd_putint12(curr_B);
+         lcd_putc(' ');
+ 
          lcd_putc('T');
          lcd_putc(':');
          lcd_putint12(temp_SOURCE);
@@ -652,7 +657,7 @@ void loop()
       
       //adcstatus &= ~(1<<ADC_I_BIT);
       // curr_U = analogRead(#define ADC_SHUNT 16) - SHUNT_OFFSET;
-      //curr_O = analogRead(ADC_SHUNT_O) - SHUNT_OFFSET;
+      curr_B = analogRead(ADC_SHUNT_O) - SHUNT_OFFSET;
       
       curr_A = adc->analogRead(ADC_SHUNT); // normiert auf Masse
       
@@ -661,9 +666,15 @@ void loop()
       //     Serial.print(usbsendcounter);
       sendbuffer[STROM_A_L_BYTE + DATA_START_BYTE] = curr_A & 0x00FF;
       sendbuffer[STROM_A_H_BYTE + DATA_START_BYTE] = (curr_A & 0xFF00)>>8;
+
+      // Strom B  // test    
+      sendbuffer[STROM_B_L_BYTE + DATA_START_BYTE] = curr_B & 0x00FF;
+      sendbuffer[STROM_B_H_BYTE + DATA_START_BYTE] = (curr_B & 0xFF00)>>8;
+     
+      
       sendbuffer[DEVICE_BYTE + DATA_START_BYTE] |= (1<<STROM_ID);
-      //    sendbuffer[I_SHUNT_O_L_BYTE + DATA_START_BYTE] = curr_O & 0x00FF;
-      //    sendbuffer[I_SHUNT_O_H_BYTE + DATA_START_BYTE] = (curr_O & 0xFF00)>>8;
+      //    sendbuffer[I_SHUNT_O_L_BYTE + DATA_START_BYTE] = curr_B & 0x00FF;
+      //    sendbuffer[I_SHUNT_O_H_BYTE + DATA_START_BYTE] = (curr_B & 0xFF00)>>8;
       
       temp_SOURCE = analogRead(ADC_TEMP_SOURCE);
       temp_BATT = analogRead(ADC_TEMP_BATT);
