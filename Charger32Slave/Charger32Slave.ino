@@ -37,6 +37,8 @@
 
 //#include "analog.h"
 
+#include "SPI.h"
+
 // define constants
 //#define USB_DATENBREITE 64
 
@@ -77,7 +79,11 @@ volatile uint32_t           batt_MAX_raw=0;
 volatile uint16_t           batt_OFF_raw=0;
 
 volatile uint16_t       batt_M = 0;
+uint16_t[16]   batt_M_Array = {}; // Ringbuffer fuer Mittelwertbildung
+uint8_t                 batt_M_pos = 0; // position im ringbuffer
 volatile uint16_t       batt_O = 0;
+uint16_t[16]   batt_O_Array = {};
+uint8_t                 batt_O_pos = 0;
 volatile uint16_t       curr_U = 0;
 volatile uint16_t       curr_B = 0;
 
@@ -85,6 +91,8 @@ volatile uint16_t       curr_A = 0;
 
 volatile uint16_t       temp_SOURCE = 0;
 volatile uint16_t       temp_BATT = 0;
+
+volatile uint16_t       U_Balance = 0;
 
 volatile uint16_t  sekundentimercounter = 0;
 volatile uint16_t adctimersekunde = 0;
@@ -105,7 +113,7 @@ volatile uint8_t taskcode;
 // Charger
 volatile uint16_t                    messungcounter=0; // Anzahl messungen fortlaufend
 volatile uint16_t                    strommessungcounter=0;
-volatile uint16_t                     blockcounter = 0; // Block, in den gesichert werden soll, mit einem Offset von 1 (Block 0 ist header der SD).
+volatile uint16_t                    blockcounter = 0; // Block, in den gesichert werden soll, mit einem Offset von 1 (Block 0 ist header der SD).
 
 volatile uint16_t                    writedatacounter=0; // Anzahl mmc-writes fortlaufend
 volatile uint16_t                    writemmcstartcounter=0; // Anzahl mmc-writes fortlaufend
@@ -119,7 +127,7 @@ volatile uint8_t                    hoststatus = 0;
 volatile uint8_t                    in_taskcounter=0;
 volatile uint8_t                    out_taskcounter=0;
 
-volatile uint8_t mmcbuffer[SD_DATA_SIZE] = {};
+volatile uint8_t                    mmcbuffer[SD_DATA_SIZE] = {};
 
 
 volatile uint16_t                   linecounter=0;
@@ -172,14 +180,16 @@ IntervalTimer              stromTimer;
 // constants
 
 // bits von hoststatus
-#define MESSUNG_RUN      7
-#define MESSUNG_OK         6
-#define DOWNLOAD_OK        5
-#define USB_READ_OK        4
-#define TEENSY_ADC_OK      3
-#define TEENSY_MMC_OK      2
-#define MANUELL_OK         1
+#define LADUNG_RUN         7
+#define MESSUNG_RUN        6
+#define MESSUNG_OK         5
+#define DOWNLOAD_OK        4
+#define USB_READ_OK        3
+#define TEENSY_ADC_OK      2
+#define TEENSY_MMC_OK      1
+#define MANUELL_OK         0
 
+        
 
 
 
@@ -203,24 +213,34 @@ void slaveinit(void)
    pinMode(ADC_O, INPUT);
 
    pinMode(ADC_SHUNT, INPUT);
-   pinMode(ADC_SHUNT_O, INPUT);
+   pinMode(ADC_AAA, INPUT);
 
    pinMode(ADC_TEMP_SOURCE, INPUT);
    pinMode(ADC_TEMP_BATT, INPUT);
+   
+   pinMode(ADC_BALANCE, INPUT);
    
    //LCD
    pinMode(LCD_RSDS_PIN, OUTPUT);
    pinMode(LCD_ENABLE_PIN, OUTPUT);
    pinMode(LCD_CLOCK_PIN, OUTPUT);
 
-   pinMode(LADESTROM_PWM_A, OUTPUT);
-   pinMode(LADESTROM_PWM_B, OUTPUT);
+  // pinMode(LADESTROM_PWM_A, OUTPUT);
+  // pinMode(LADESTROM_PWM_B, OUTPUT);
    
+   pinMode(LOAD_START, INPUT); // Laden START manuell
+   pinMode(LOAD_STOP, INPUT); // Laden STOP manuell
    
 //   pinMode(25, OUTPUT);// OC1A
 //   pinMode(26, OUTPUT);// OC1A
    
  //  pinMode(24, OUTPUT);// OC2A
+   
+   // SPI
+   pinMode(10, OUTPUT);// CS
+   pinMode(11, OUTPUT);// MOSI
+   pinMode(12, INPUT);// MISO
+   pinMode(13, OUTPUT);// SCK
 }
 
 void ADC_init(void) 
@@ -249,6 +269,186 @@ void clear_sendbuffer(void)
    }
 }
 
+// debounce
+volatile uint8_t tipptastenstatus = 0;
+#define MAX_CHECKS 8
+volatile uint8_t last_debounced_state = 0;
+volatile uint8_t debounced_state = 0;
+volatile uint8_t state[MAX_CHECKS] = {0};
+
+volatile uint8_t debounceindex = 0;
+volatile uint8_t SPItastenstatus = 0;
+volatile uint8_t SPIcheck=0;
+
+typedef struct
+{
+   uint8_t pin = 0xFF;
+   uint16_t tasten_history;
+   uint8_t pressed;
+   long lastDebounceTime;
+}tastenstatus;
+
+//long lastDebounceTime = 0;  // the last time the output pin was toggled
+long debounceDelay = 20;    // the debounce time; increase if the output flickers
+
+tastenstatus tastenstatusarray[8] = {}; 
+
+uint8_t tastenbitstatus = 0; // bits fuer tasten
+
+volatile uint8_t tastencode = 0;
+
+
+uint8_t readTaste(uint8_t taste)
+{
+   return (digitalReadFast(taste) == 0);
+}
+
+void update_button(uint8_t taste, uint16_t *button_history)
+{
+   *button_history = *button_history << 1;
+   *button_history |= readTaste(taste);
+}
+
+uint8_t is_button_pressed(uint8_t button_history)
+{
+   return (button_history == 0b01111111);
+}
+
+uint8_t is_button_released(uint8_t button_history){
+   return (button_history == 0b10000000);
+}
+
+uint8_t test_for_press_only(uint8_t pin)
+{   
+   static uint16_t button_history = 0;
+   uint8_t pressed = 0;    
+   
+   button_history = button_history << 1;
+   button_history |= readTaste(pin);
+   if ((button_history & 0b11000111) == 0b00000111)
+   { 
+      pressed = 1;
+      button_history = 0b11111111;
+   }
+   return pressed;
+}
+
+
+
+uint8_t checktasten(void)
+{
+   uint8_t count = 0; // Anzahl aktivierter Tasten
+   uint8_t i=0;
+   uint8_t tastencode = 0;
+   while (i<8)
+   {
+      uint8_t pressed = 0;
+      if (tastenstatusarray[i].pin < 0xFF)
+      {
+         count++;
+         tastenstatusarray[i].tasten_history = tastenstatusarray[i].tasten_history << 1; // shift left
+ 
+         tastenstatusarray[i].tasten_history |= readTaste(tastenstatusarray[i].pin); // status, pin-nummer von $element i
+         if ((tastenstatusarray[i].tasten_history & 0b11000111) == 0b00000111)
+         {
+            pressed = 1;
+            tipptastenstatus |= (1<<i);
+            tastenbitstatus |= (1<<i);
+            tastenstatusarray[i].tasten_history = 0b11111111;
+            tastenstatusarray[i].pressed = pressed;
+         }
+         
+      }// i < 0xFF
+      
+      i++;
+   }
+   // tastenstatusarray
+   //return tastencode;
+   return tipptastenstatus ;
+}
+
+
+
+void debounce_ISR(void)
+{
+   //digitalWriteFast(OSZIA,LOW);
+   uint8_t old_tipptastenstatus = tipptastenstatus;
+   tipptastenstatus = checktasten();
+   //SPIcheck  = checkSPItasten(); 
+   //digitalWriteFast(OSZIA,HIGH);
+   
+}
+
+
+//MARK: checkSPItasten
+uint8_t checkSPItasten() // MCP23S17 abrufen // Takt ca. 300us
+{
+   uint8_t count = 0; // Anzahl aktivierter Tasten
+   uint8_t i=0;
+   //uint8_t tastencode = 0;
+   uint8_t check=0;
+   //digitalWriteFast(OSZIB,LOW); // 
+   
+   //tastencode = 0xFF - mcp0.gpioReadPortB(); // 8 us active taste ist LO > invertieren
+     
+   //digitalWriteFast(OSZIB,HIGH);
+   //digitalWriteFast(OSZIB,LOW);
+   while (i<8) // 1us
+   {
+      uint8_t pressed = 0;
+      if (tastenstatusarray[i].pin < 0xFF)
+      {
+         count++;
+         tastenstatusarray[i].tasten_history = tastenstatusarray[i].tasten_history << 1;
+      
+         uint8_t pinnummer = tastenstatusarray[i].pin;
+         tastenstatusarray[i].tasten_history |= ((tastencode & (1<<pinnummer)) > 0);
+         if ((tastenstatusarray[i].tasten_history & 0b11000111) == 0b00000111)
+         {
+            pressed = 1;
+            SPItastenstatus |= (1<<i);
+            tastenbitstatus |= (1<<i);
+            tastenstatusarray[i].tasten_history = 0b11111111;
+            tastenstatusarray[i].pressed = pressed;
+         }
+      }// i < 0xFF
+      i++;
+   }
+   //controllooperrcounterD = count;
+   //digitalWriteFast(OSZIB,HIGH); // 9us
+   return SPItastenstatus ;
+}
+
+void prellcheck(void) // 30us debounce mit ganssle-funktion
+{
+   //digitalWriteFast(OSZIB,LOW);
+      
+    
+   // MCP lesen
+ /*  
+   regB = bereichpos;
+//   digitalWriteFast(OSZIB,LOW);
+   uint8_t regBB = (regB & 0x07)<< 5;
+   mcp0.gpioWritePortA((regA | regBB)); // output
+  //digitalWriteFast(OSZIB,HIGH);
+   tastencode = 0xFF-mcp0.gpioReadPortB(); // input 8us . PORTB invertieren, 1 ist aktiv
+    //digitalWriteFast(OSZIB,HIGH);
+      
+   //digitalWriteFast(OSZIB,LOW);
+ */  
+   //debounce_switch(tastencode); // 6us
+   debounced_state = checkSPItasten();
+   
+   
+   //controllooperrcounterB = debounced_state;
+      
+   // end test
+   //   controllooperrcounterC = ausgabestatus;
+  // digitalWriteFast(OSZIB,HIGH);
+
+}
+
+// end debounce
 void OSZIATOGG()
 {
    digitalWriteFast(OSZI_PULS_A, !digitalReadFast(OSZI_PULS_A));
@@ -263,7 +463,7 @@ void init_analog(void)
 {
     analogWriteFrequency(4, 375000);
    
-   adc->adc0->setAveraging(4); // set number of averages 
+   adc->adc0->setAveraging(16); // set number of averages 
    adc->adc0->setResolution(12); // set bits of resolution
    adc->adc0->setConversionSpeed(ADC_CONVERSION_SPEED::LOW_SPEED);
    adc->adc0->setSamplingSpeed(ADC_SAMPLING_SPEED::MED_SPEED);
@@ -310,7 +510,7 @@ void adctimerfunction()
 // Add setup code
 void setup()
 {
-   Serial.begin(9600);
+   //Serial.begin(9600);
    Serial.println(F("RawHID H0"));
    slaveinit();
    /* initialize the LCD */
@@ -318,18 +518,26 @@ void setup()
    lcd_initialize(LCD_FUNCTION_8x2, LCD_CMD_ENTRY_INC, LCD_CMD_ON);
    _delay_ms(100);
    lcd_puts("Guten Tag Charger");
-   _delay_ms(100);
+   _delay_ms(500);
    adcTimer.begin(adctimerfunction,adctimerintervall); // 1ms
    lcd_clr_line(0);
    ADC_init();
 //   analogWriteResolution(10);
    pinMode(A14,OUTPUT);
+   pinMode(13,OUTPUT);
    analogWriteResolution(10);
 
+//   SPI.begin();
+   
 //   batt_MAX_raw = (U_MAX <<4) / (TEENSYVREF * 100)/ADC_U_FAKTOR;
    volatile uint16_t           batt_MAX_raw=0;
    volatile uint16_t           batt_OFF_raw=0;
    
+   // Tasten zuteilen
+   tastenstatusarray[0].pin = LOAD_START; // Taste Laden Start
+   tastenstatusarray[1].pin = LOAD_STOP; // Taste Laden Start
+   pinMode(BLINKLED,OUTPUT);
+
 }
 
 void f_to_a(float n, char *res, int afterpoint)
@@ -434,6 +642,92 @@ void int_to_dispstr(uint16_t inum,char *outbuf,int8_t decimalpoint_pos)
         }
 }
 
+void load_start(uint8_t manuell)
+{
+   hoststatus |= (1<<SEND_OK); 
+ 
+   hoststatus |= (1<<MESSUNG_RUN); 
+   hoststatus |= (1<<LADUNG_RUN); 
+//            clear_sendbuffer();
+   cli();
+   Serial.print(F("MESSUNG_START"));
+   //uint8_t ee = eeprom_read_word(&eeprom_intervall);
+   //lcd_gotoxy(12,3);
+   //lcd_putint(ee);
+   hoststatus |= (1<<USB_READ_OK);
+   
+   adcstatus |= (1<<FIRSTRUN);
+   
+   messungcounter = 0;
+   blockcounter = 0;
+   sendbuffer[0] = MESSUNG_START;
+   blockdatacounter = 0;            // Zaehler fuer Data auf dem aktuellen Block
+   writedatacounter = 0;
+   linecounter=0;
+   intervallcounter=0;
+   
+   usbstatus = taskcode;
+   
+   sd_status = recvbuffer[1]; 
+    
+   mmcwritecounter = 0; // Zaehler fuer Messungen auf MMC
+   
+   saveSDposition = 0; // Start der Messung immer am Anfang des Blocks
+   
+   // intervall
+   intervall = recvbuffer[TAKT_LO_BYTE] | (recvbuffer[TAKT_HI_BYTE]<<8);
+   Serial.print(F("intervall "));
+   Serial.print(intervall);
+    
+   //               abschnittnummer = recvbuffer[ABSCHNITT_BYTE]; // Abschnitt,
+   
+   blockcounter = recvbuffer[BLOCKOFFSETLO_BYTE] | (recvbuffer[BLOCKOFFSETHI_BYTE]<<8);
+   Serial.print(F(" blockcounter "));
+   Serial.println(blockcounter);
+
+   startminute  = recvbuffer[STARTMINUTELO_BYTE] | (recvbuffer[STARTMINUTEHI_BYTE]<<8); // in SD-Header einsetzen
+   
+   // Kanalstatus lesen. Wird beim Start der Messungen uebergeben
+   
+   // nicht verwendet
+    uint8_t kan = 0;
+//     lcd_gotoxy(8,2);
+   for(kan = 0;kan < 4;kan++)
+   {
+//        lcd_putint2(kanalstatusarray[kan]);
+   }
+//       _delay_ms(100);          
+   for(kan = 0;kan < 4;kan++)
+   {
+      kanalstatusarray[kan] = recvbuffer[KANAL_BYTE + kan];
+   }
+   
+//     lcd_gotoxy(8,2);
+   for(kan = 0;kan < 4;kan++)
+   {
+//       lcd_putint2(kanalstatusarray[kan]);
+   
+   }
+   PWM_A = STROM_LO_RAW;
+   analogWrite(A14,PWM_A);
+   
+   sendbuffer[1] = sd_status; // rueckmeldung 
+   
+   sendbuffer[USB_PACKETSIZE-1] = 76;
+   saveSDposition = 0; // erste Messung sind header
+   sei();
+   
+   // control
+   /*
+    #define STROM_HI  1000 // mA
+    #define STROM_LO  50   // mA
+    #define STROM_REP  100 // Reparaturstrom bei Unterspannung
+
+    */
+    // _delay_ms(1000);
+   //uint8_t usberfolg = usb_rawhid_send((void*)sendbuffer, 50);
+   
+}
 void int_to_floatstr(uint16_t inum,char *outbuf,int8_t decimalpoint_pos, uint8_t maxdigit)
 {
    int8_t i,j,k;
@@ -494,17 +788,45 @@ void int_to_floatstr(uint16_t inum,char *outbuf,int8_t decimalpoint_pos, uint8_t
 
 
 elapsedMillis sinceRecv;
+elapsedMillis sincePrellcheck;
+elapsedMillis sinceCheckTaste;
+
 // Add loop code
 void loop()
 {
+   /*
+   if (sincePrellcheck > 5)
+   {
+      sincePrellcheck = 0;
+      debounce_ISR();
+   }
+   if (sinceCheckTaste > 100) // Tastenstatus abfragen
+   {
+   // Taste[0]
+   if (tastenstatusarray[LOAD_START].pressed) // Taste gedrueckt Load Start
+   {
+      lcd_gotoxy(14,1);
+      lcd_puts("Start");
+      
+      tastenstatusarray[LOAD_START].pressed = 0;
+   }
+   else
+   {
+      lcd_gotoxy(14,1);
+      lcd_putc(' ');
+   }
+   }
+   */
    loopcount0+=1;
    if (loopcount0==0x0FFF)
    {
+      digitalWrite(BLINKLED, !digitalRead(BLINKLED));
       loopcount0=0;
       loopcount1+=1;
       if (loopcount1 > 10)
       {
-         digitalWrite(LOOPLED, !digitalRead(LOOPLED));
+         //digitalWrite(LOOPLED, !digitalRead(LOOPLED));
+digitalWrite(13, !digitalRead(13));
          loopcount1 = 0;
          lcd_gotoxy(0,0);
          /*
@@ -539,14 +861,26 @@ void loop()
          lcd_putc(':');
          lcd_putint12(curr_A);
          lcd_putc(' ');
+         /*
          lcd_putc('B');
          lcd_putc(':');
          lcd_putint12(curr_B);
          lcd_putc(' ');
- 
+         */
+/*
          lcd_putc('T');
          lcd_putc(':');
          lcd_putint12(temp_SOURCE);
+ */        
+         lcd_putc('B');
+         lcd_putc(':');
+         lcd_putint12(U_Balance);
+         
+         lcd_putc(' ');
+         lcd_putc('L');
+         lcd_putc(':');
+         lcd_puthex(loadstatus);
+
          
          
      //    lcd_clr_line(3);
@@ -559,7 +893,7 @@ void loop()
   //       lcd_putc(' ');
          batt_M_Spannung = (((batt_M  * TEENSYVREF_Int) )* ADC_U_FAKTOR )>>10 ;
          Serial.print(F("\nbatt_M: "));
-         Serial.print(batt_M_Spannung);
+         Serial.print(batt_M);
          Serial.print(F(" batt_M_Spannung: "));
          Serial.println(batt_M_Spannung);
  
@@ -580,7 +914,7 @@ void loop()
          //Serial.print(F("int_to_floatstr O: "));
          //Serial.println(float_StringM);
 
-         lcd_puts("UA: ");
+         lcd_puts("UA:");
          lcd_puts(float_StringM);
          //lcd_putc('*');
  
@@ -608,7 +942,7 @@ void loop()
          //Serial.print(F("int_to_floatstr O: "));
          //Serial.println(float_StringO);
 
-         lcd_puts("UO: ");
+         lcd_puts("UO:");
          lcd_puts(float_StringO);
          //lcd_putc('*');
  
@@ -632,34 +966,35 @@ void loop()
      
       noInterrupts();
       
-//      analogWrite(A14,PWM_A);
-      
       hoststatus &= ~(1<<MESSUNG_OK);
       
       sendbuffer[0] = TEENSY_DATA;
-      //adcstatus &= ~(1<<ADC_U_BIT);
-      
-      //batt_M = readKanal(ADC_M);
-      //   batt_M = analogRead(ADC_M);
+ 
       batt_M =  adc->analogRead(ADC_M);
       
       uint16_t TEENSYVREF_Int = TEENSYVREF*100;
       
+      // Batt M
       batt_M_Spannung = (batt_M  * TEENSYVREF_Int) ;
       
       sendbuffer[U_M_L_BYTE + DATA_START_BYTE] = batt_M & 0x00FF;
       sendbuffer[U_M_H_BYTE + DATA_START_BYTE] = (batt_M & 0xFF00)>>8;
       sendbuffer[DEVICE_BYTE + DATA_START_BYTE] |= (1<<SPANNUNG_ID);
+      
+      // Batt O
       batt_O = analogRead(ADC_O);
       
       sendbuffer[U_O_L_BYTE + DATA_START_BYTE] = batt_O & 0x00FF;
       sendbuffer[U_O_H_BYTE + DATA_START_BYTE] = (batt_O & 0xFF00)>>8;
       
-      //adcstatus &= ~(1<<ADC_I_BIT);
-      // curr_U = analogRead(#define ADC_SHUNT 16) - SHUNT_OFFSET;
-      curr_B = analogRead(ADC_SHUNT_O) - SHUNT_OFFSET;
-      
+       
+      // Strom Charger
       curr_A = adc->analogRead(ADC_SHUNT); // normiert auf Masse
+      
+      // Strom Balancer
+      curr_B = analogRead(ADC_AAA) - SHUNT_OFFSET;
+      
+      
       
       
       //    Serial.print(F(" ADC usbsendcounter: "));
@@ -685,6 +1020,11 @@ void loop()
       sendbuffer[TEMP_BATT_H_BYTE + DATA_START_BYTE] = (temp_BATT & 0xFF00)>>8;
       sendbuffer[DEVICE_BYTE + DATA_START_BYTE] |= (1<<TEMP_ID);
       
+      U_Balance = analogRead(ADC_BALANCE);
+      sendbuffer[BALANCE_L_BYTE + DATA_START_BYTE] = U_Balance & 0x00FF;
+      sendbuffer[BALANCE_H_BYTE + DATA_START_BYTE] = (U_Balance & 0xFF00)>>8;
+    
+      
       interrupts();
       
       Serial.print(F("ADC batt_M "));
@@ -696,9 +1036,94 @@ void loop()
       Serial.print(F(" PWM_A: "));
       Serial.print(PWM_A);
 
-      Serial.print(F(" curr_A: "));
-      Serial.print(curr_A);
+      Serial.print(F(" curr_A: ")); // shunt
+      Serial.println(curr_A);
+      Serial.print(F("hoststatus: "));
+      Serial.println(hoststatus);
+
+      if (hoststatus & (1<<MESSUNG_RUN))
+      {
+         Serial.print(F("hoststatus OK "));
+         Serial.print(F(" batt_M "));
+         Serial.print(batt_M);
+         
+         Serial.print(F(" batt_O "));
+         Serial.println(batt_O);
+
+         Serial.print(F(" BATT_MIN_RAW "));
+         Serial.print(BATT_MIN_RAW);
+         
+         Serial.print(F(" BATT_MAX_RAW "));
+         Serial.println(BATT_MAX_RAW);
+
+         //loadstatus &= ~(1<<BATT_DOWN_BIT);
+         
+         
+         if ((batt_M < BATT_MIN_RAW) || (batt_O < BATT_MIN_RAW))
+         {
+            Serial.print(F("STROM_REP_RAW: "));
+            //hoststatus |= (1<<LADUNG_RUN); 
+            Serial.println(curr_A);
+            
+            PWM_A = STROM_LO_RAW;
+            
+            analogWrite(A14,PWM_A);
+         }
+         else if (((batt_M >= BATT_MIN_RAW) && (batt_O >= BATT_MIN_RAW)) && ((batt_M < BATT_MAX_RAW) || (batt_O < BATT_MAX_RAW)))
+         {
+            Serial.print(F(" < STROM_HI_RAW: "));
+            Serial.println(curr_A);
+            
+            if ((PWM_A < STROM_HI_RAW) && (hoststatus & (1<<LADUNG_RUN)) && (!(loadstatus & (1<<BATT_DOWN_BIT))))
+            {
+               PWM_A += 4;
+            
+               analogWrite(A14,PWM_A);
+            }
+         }
+         
+         if ((batt_M > BATT_MAX_RAW) || (batt_O > BATT_MAX_RAW))
+         {
+            Serial.print(F("< STROM_REP_RAW: "));
+            //hoststatus &= ~(1<<LADUNG_RUN);  // Ladungszyklus beenden
+            loadstatus |= (1<<BATT_DOWN_BIT); // Strom absenken
+            Serial.println(curr_A);
+            if ((PWM_A > STROM_REP_RAW) )
+            {
+               //PWM_A -= 16;
+               //analogWrite(A14,PWM_A);
+            }
+            //PWM_A = STROM_REP_RAW;
+            //analogWrite(A14,PWM_A);
+            
+          
+         }
+         if (loadstatus &(1<<BATT_DOWN_BIT))
+         {
+            if (PWM_A > (STROM_REP_RAW + 8) )
+            {
+               PWM_A -= 8;
+               analogWrite(A14,PWM_A);
+               
+            }// Strom absenken
+            
+            Serial.println(curr_A);
+            
+         }
+
+      }
+       
       
+      if ((batt_M > BATT_OFF_RAW) || (batt_O > BATT_OFF_RAW))
+      {
+         Serial.print(F("STROM_OFF_RAW: "));
+         Serial.println(curr_A);
+
+         PWM_A = 0;
+         analogWrite(A14,PWM_A);
+        
+      }
+
       
       if (curr_A < 20)
       {
@@ -771,8 +1196,8 @@ void loop()
       senderfolg = RawHID.send((void*)sendbuffer, 100);
       if (senderfolg > 0) 
       {
-         //Serial.print(F(" ADC packet "));
-         //Serial.println(packetcount);
+         Serial.print(F(" ADC packet "));
+         Serial.println(packetcount);
          packetcount = packetcount + 1;
          
       } else {
@@ -802,13 +1227,15 @@ void loop()
          usbrecvcounter++;
          switch (taskcode)
          {
+               
             case STROM_SET:
             {
+               // MARK: STROM_SET  
                Serial.print(("STROM_SET  0x88 "));
                PWM_A = ((recvbuffer[STROM_A_H_BYTE]) << 8) | recvbuffer[STROM_A_L_BYTE] ;
                Serial.print("STROM PWM_A:");
                Serial.println(PWM_A); 
-               analogWrite(23,PWM_A);
+               //analogWrite(23,PWM_A);
                analogWrite(A14,PWM_A);
                
                
@@ -843,7 +1270,11 @@ void loop()
             {
                hoststatus |= (1<<SEND_OK); 
                hoststatus |= (1<<MESSUNG_RUN); 
- //             clear_sendbuffer();
+               hoststatus |= (1<<LADUNG_RUN); 
+               
+               loadstatus &= ~(1<<BATT_DOWN_BIT);
+               
+ //            clear_sendbuffer();
                cli();
                Serial.print(F("MESSUNG_START"));
                //uint8_t ee = eeprom_read_word(&eeprom_intervall);
@@ -880,7 +1311,7 @@ void loop()
                Serial.print(F(" blockcounter "));
                Serial.println(blockcounter);
             
-                startminute  = recvbuffer[STARTMINUTELO_BYTE] | (recvbuffer[STARTMINUTEHI_BYTE]<<8); // in SD-Header einsetzen
+               startminute  = recvbuffer[STARTMINUTELO_BYTE] | (recvbuffer[STARTMINUTEHI_BYTE]<<8); // in SD-Header einsetzen
                
                // Kanalstatus lesen. Wird beim Start der Messungen uebergeben
                
@@ -891,10 +1322,7 @@ void loop()
                {
           //        lcd_putint2(kanalstatusarray[kan]);
                }
-                          
         //       _delay_ms(100);          
-                           
-                           
                for(kan = 0;kan < 4;kan++)
                {
                   kanalstatusarray[kan] = recvbuffer[KANAL_BYTE + kan];
@@ -906,30 +1334,23 @@ void loop()
            //       lcd_putint2(kanalstatusarray[kan]);
                
                }
-          
+               PWM_A = STROM_LO_RAW;
+               analogWrite(A14,PWM_A);
                
-               /*
-                lcd_putc(' ');
-                lcd_puthex(blockcounter);
-                
-                lcd_putc(' ');
-                lcd_puthex(sd_status);
-                lcd_putc(' ');
-                lcd_puthex(saveSDposition);
-                */
-         //      lcd_gotoxy(12,1);
-         //      lcd_puts("start ");
                sendbuffer[1] = sd_status; // rueckmeldung 
-               //sendbuffer[2] = wl_callback_status;
-               //               sendbuffer[5] = 18;//recvbuffer[STARTMINUTELO_BYTE];;
-               //               sendbuffer[6] = 19;//recvbuffer[STARTMINUTEHI_BYTE];;
-               //sendbuffer[7] = 21;
                
                sendbuffer[USB_PACKETSIZE-1] = 76;
                saveSDposition = 0; // erste Messung sind header
                sei();
                
-               // _delay_ms(1000);
+               // control
+               /*
+                #define STROM_HI  1000 // mA
+                #define STROM_LO  50   // mA
+                #define STROM_REP  100 // Reparaturstrom bei Unterspannung
+
+                */
+                // _delay_ms(1000);
                //uint8_t usberfolg = usb_rawhid_send((void*)sendbuffer, 50);
                
             }break;
@@ -941,7 +1362,8 @@ void loop()
             {
                Serial.println(F("MESSUNG_STOP "));
                cli();
-               hoststatus &= ~(1<<MESSUNG_RUN); 
+               hoststatus &= ~(1<<MESSUNG_RUN);
+               hoststatus &= ~(1<<LADUNG_RUN); 
                hoststatus |= (1<<SEND_OK); 
                clear_sendbuffer();
                sendbuffer[0] = MESSUNG_STOP;
@@ -980,6 +1402,11 @@ void loop()
                
                //uint8_t usberfolg = usb_rawhid_send((void*)sendbuffer, 50);
                sei();
+               // Haltestrom einschalten
+               PWM_A = STROM_LO_RAW;
+               
+               analogWrite(A14,PWM_A);
+
             }break;
                
 

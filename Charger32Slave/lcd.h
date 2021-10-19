@@ -57,7 +57,7 @@
 #define LCD_CLOCK_PIN           4
 
 
-#define LCD_BACKLIGHT_PIN       5
+//#define LCD_BACKLIGHT_PIN       5
 
 #define HIGH   1
 #define LOW    0
