@@ -14,8 +14,8 @@
 //#define LADEPORT  PORTC
 //#define LADEDDR  DDRC
 
-//#define LADESTROM_PWM_A 10  
-//#define LADESTROM_PWM_B 11  
+#define MAX_STROM_L_BYTE   10
+#define MAX_STROM_H_BYTE   11
 
 #define  TEENSY_DATA        0xFC // Daten des teensy lesen
 
@@ -28,9 +28,8 @@
 #define ADC_M              A0 // 14
 #define ADC_O              A1 // 15
 #define ADC_SHUNT          A2 // 16
-#define ADC_AAA A3
 
-#define ADC_BALANCE        A3 // 18
+#define ADC_BALANCE        A3 // 17
 
 #define ADC_TEMP_SOURCE    A7 // 21
 #define ADC_TEMP_BATT      A8 // 22
@@ -65,17 +64,18 @@
 
 #define RAW_U_FAKTOR
 #define BATT_MIN_RAW 650 // Wert fuer Vergleich mit ADC
-#define BATT_OFF_RAW 900 
-#define BATT_MAX_RAW 930
+#define BATT_OFF_RAW 885 
+#define BATT_MAX_RAW 880
 
 #define STROM_HI  1000 // mA
 #define STROM_LO  50   // mA
 #define STROM_REP  100 // Reparaturstrom bei Unterspannung
 
-#define STROM_HI_RAW  450 // ADC-Wert
+#define STROM_HI_RAW  950 // ADC-Wert
 #define STROM_LO_RAW  50   // mA
 #define STROM_REP_RAW  100 // Reparaturstrom bei Unterspannung
 
+#define PWM_REP   100
 
 
 #define STROM_FAKTOR 1080 // 
@@ -120,6 +120,8 @@
 #define USB_STOP           0xAA
 
 #define STROM_SET          0x88
+#define MAX_STROM_SET      0x90
+
 
 #define PACKET_SIZE        0x18 // 24 bytes fuer USB-Transfer
 #define USB_PACKETSIZE     64
@@ -164,8 +166,8 @@
 #define  STROM_A_L_BYTE    8
 #define  STROM_A_H_BYTE    9
 
-#define  STROM_B_L_BYTE    10
-#define  STROM_B_H_BYTE    11
+#define  MAX_STROM_L_BYTE    10
+#define  MAX_STROM_H_BYTE    11
 
 
 // sendbuffer
@@ -173,8 +175,8 @@
 #define U_M_H_BYTE 17
 #define U_O_L_BYTE 18
 #define U_O_H_BYTE 19
-#define I_SHUNT_U_L_BYTE 20
-#define I_SHUNT_U_H_BYTE 21
+#define I_SHUNT_L_BYTE 20
+#define I_SHUNT_H_BYTE 21
 #define I_SHUNT_O_L_BYTE 22
 #define I_SHUNT_O_H_BYTE 23
 

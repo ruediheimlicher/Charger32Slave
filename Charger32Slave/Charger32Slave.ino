@@ -55,6 +55,9 @@ ADC *adc = new ADC(); // adc object
 
 
 // Define variables and constants
+
+volatile uint16_t TEENSYVREF_Int = 0;
+
 static volatile uint8_t recvbuffer[64]={};
 static volatile uint8_t sendbuffer[64]={};
 
@@ -69,30 +72,45 @@ volatile uint8_t           senderfolg = 0;
 volatile uint8_t           status=0;
 
 volatile uint16_t           PWM_A=0;
-volatile uint16_t           PWM_B=0;
+volatile uint16_t           PWM_A_SET=0; // Obere Grenze
+volatile uint16_t           MAX_PWM_A=100; // Maximalwert
 
-uint32_t batt_M_Spannung  = 0;
-uint32_t batt_O_Spannung  = 0;
+uint32_t                    batt_M_Spannung  = 0;
+uint32_t                    batt_O_Spannung  = 0;
 
 volatile uint16_t           batt_MIN_raw=0;
 volatile uint32_t           batt_MAX_raw=0;
 volatile uint16_t           batt_OFF_raw=0;
 
 volatile uint16_t       batt_M = 0;
-uint16_t[16]   batt_M_Array = {}; // Ringbuffer fuer Mittelwertbildung
+uint16_t                batt_M_Array[8] = {}; // Ringbuffer fuer Mittelwertbildung
 uint8_t                 batt_M_pos = 0; // position im ringbuffer
+uint16_t                batt_M_Mitte = 0;  // gleitender Mittelwert
+
 volatile uint16_t       batt_O = 0;
-uint16_t[16]   batt_O_Array = {};
+uint16_t                batt_O_Array[8] = {};
 uint8_t                 batt_O_pos = 0;
+uint16_t                batt_O_Mitte = 0;  // gleitender Mittelwert
+
+uint16_t                Strom_HI_SET = STROM_HI_RAW;
 volatile uint16_t       curr_U = 0;
 volatile uint16_t       curr_B = 0;
 
-volatile uint16_t       curr_A = 0;
+volatile uint16_t       curr_L = 0;
+uint16_t                curr_L_Array[8] = {}; // Ringbuffer fuer Mittelwertbildung
+uint8_t                 curr_L_pos = 0; // position im ringbuffer
+uint16_t                curr_L_Mitte = 0;  // gleitender Mittelwert
+uint16_t                curr_L_Mittebuffer = 0; 
 
 volatile uint16_t       temp_SOURCE = 0;
 volatile uint16_t       temp_BATT = 0;
 
 volatile uint16_t       U_Balance = 0;
+uint16_t                U_Balance_Array[8] = {}; // Ringbuffer fuer Mittelwertbildung
+uint8_t                 U_Balance_pos = 0; // position im ringbuffer
+uint16_t                U_Balance_Mitte = 0;  // gleitender Mittelwert
+uint16_t                U_Balance_Mittebuffer = 0; 
+
 
 volatile uint16_t  sekundentimercounter = 0;
 volatile uint16_t adctimersekunde = 0;
@@ -213,7 +231,6 @@ void slaveinit(void)
    pinMode(ADC_O, INPUT);
 
    pinMode(ADC_SHUNT, INPUT);
-   pinMode(ADC_AAA, INPUT);
 
    pinMode(ADC_TEMP_SOURCE, INPUT);
    pinMode(ADC_TEMP_BATT, INPUT);
@@ -527,6 +544,7 @@ void setup()
    pinMode(13,OUTPUT);
    analogWriteResolution(10);
 
+   TEENSYVREF_Int = TEENSYVREF*100;
 //   SPI.begin();
    
 //   batt_MAX_raw = (U_MAX <<4) / (TEENSYVREF * 100)/ADC_U_FAKTOR;
@@ -708,7 +726,7 @@ void load_start(uint8_t manuell)
 //       lcd_putint2(kanalstatusarray[kan]);
    
    }
-   PWM_A = STROM_LO_RAW;
+   PWM_A = 100;
    analogWrite(A14,PWM_A);
    
    sendbuffer[1] = sd_status; // rueckmeldung 
@@ -823,10 +841,10 @@ void loop()
       digitalWrite(BLINKLED, !digitalRead(BLINKLED));
       loopcount0=0;
       loopcount1+=1;
-      if (loopcount1 > 10)
+      if (loopcount1 > 30)
       {
          //digitalWrite(LOOPLED, !digitalRead(LOOPLED));
-digitalWrite(13, !digitalRead(13));
+         digitalWrite(13, !digitalRead(13));
          loopcount1 = 0;
          lcd_gotoxy(0,0);
          /*
@@ -835,9 +853,9 @@ digitalWrite(13, !digitalRead(13));
          lcd_puthex(recvbuffer[STROM_A_L_BYTE]);           
          lcd_putc(' ');
           */
-         lcd_putint12(PWM_A); 
-         lcd_putc(' ');
-         lcd_puthex(recvbuffer[TASK_BYTE]);           
+         //lcd_putint12(PWM_A); 
+         //lcd_putc('T');
+         //lcd_puthex(recvbuffer[TASK_BYTE]);           
 
          //Spannung = wert * TEENSYVREF / 1024
          
@@ -846,20 +864,20 @@ digitalWrite(13, !digitalRead(13));
 
          lcd_gotoxy(0,1);
          lcd_putc('O');
-         lcd_putc(':');
-         lcd_putint12(batt_O);
+         //lcd_putc(':');
+         lcd_putint12(batt_O_Mitte);
          lcd_putc(' ');
          lcd_putc('M');
-         lcd_putc(':');
-         lcd_putint12(batt_M);
+         //lcd_putc(':');
+         lcd_putint12(batt_M_Mitte);
          lcd_putc(' ');
          lcd_putc('T');
          lcd_puthex(taskcode);
          
          lcd_gotoxy(0,2);
          lcd_putc('S');
-         lcd_putc(':');
-         lcd_putint12(curr_A);
+         //lcd_putc(':');
+         lcd_putint12(curr_L_Mitte);
          lcd_putc(' ');
          /*
          lcd_putc('B');
@@ -873,29 +891,34 @@ digitalWrite(13, !digitalRead(13));
          lcd_putint12(temp_SOURCE);
  */        
          lcd_putc('B');
-         lcd_putc(':');
-         lcd_putint12(U_Balance);
+         //lcd_putc(':');
+         lcd_putint12(U_Balance_Mitte);
          
          lcd_putc(' ');
          lcd_putc('L');
-         lcd_putc(':');
+         //lcd_putc(':');
          lcd_puthex(loadstatus);
+
+         lcd_putc(' ');
+         lcd_putc('H');
+         lcd_puthex(hoststatus);
 
          
          
      //    lcd_clr_line(3);
-         uint16_t TEENSYVREF_Int = TEENSYVREF*100;
+ //        uint16_t TEENSYVREF_Int = TEENSYVREF*100;
          lcd_gotoxy(0,3);
  //        lcd_putint12(TEENSYVREF_Int);
  //        lcd_putc(' ');
 
   //       lcd_putint12(batt_M);
   //       lcd_putc(' ');
-         batt_M_Spannung = (((batt_M  * TEENSYVREF_Int) )* ADC_U_FAKTOR )>>10 ;
-         Serial.print(F("\nbatt_M: "));
-         Serial.print(batt_M);
-         Serial.print(F(" batt_M_Spannung: "));
-         Serial.println(batt_M_Spannung);
+  //       batt_M_Spannung = (((batt_M  * TEENSYVREF_Int) )* ADC_U_FAKTOR )>>10 ;
+         
+    //Serial.print(F("\nbatt_M: "));
+         //Serial.print(batt_M);
+         //Serial.print(F(" batt_M_Spannung: "));
+         //Serial.println(batt_M_Spannung);
  
          char battbufM[8];
          itoa(batt_M_Spannung,battbufM,10); // convert integer to string
@@ -920,7 +943,7 @@ digitalWrite(13, !digitalRead(13));
  
          lcd_putc(' ');
          // Batt O
-         batt_O_Spannung = (((batt_O  * TEENSYVREF_Int) )* ADC_U_FAKTOR )>>10 ; // ADC_U_FAKTOR: Umrechnung aus ADC 10bit, Teensy ref 3.3
+   //      batt_O_Spannung = (((batt_O  * TEENSYVREF_Int) )* ADC_U_FAKTOR )>>10 ; // ADC_U_FAKTOR: Umrechnung aus ADC 10bit, Teensy ref 3.3
          //Serial.print(F("\nbatt_O: "));
          //Serial.print(batt_O);
          //Serial.print(F("  batt_O_Spannung: "));
@@ -945,7 +968,30 @@ digitalWrite(13, !digitalRead(13));
          lcd_puts("UO:");
          lcd_puts(float_StringO);
          //lcd_putc('*');
- 
+         
+         /*
+         Serial.print(F("****   *** **** loop "));
+         Serial.print(F(" batt_M_Spannung "));
+         Serial.print(batt_M_Spannung);
+         Serial.print(F(" batt_O_Spannung "));
+         Serial.println(batt_O_Spannung);
+
+         
+         
+         Serial.print(F("****   curr_L: "));
+         Serial.print(curr_L_Mitte);
+ //        Serial.print(F(" Mittebuffer: "));
+ //        Serial.print(curr_L_Mittebuffer);
+         //Serial.print(F(" curr_O: "));
+         /*
+         Serial.println(curr_O_Mitte);
+         for (uint8_t l = 0;l<8;l++)
+         {
+            Serial.print(curr_L_Array[l]);
+            Serial.print(F(" "));
+         }
+         */
+         //Serial.println();
          
          
     //     lcd_putint16(batt_M_Spannung);
@@ -965,6 +1011,7 @@ digitalWrite(13, !digitalRead(13));
    {
      
       noInterrupts();
+//      Serial.println(F("MESSUNG_OK Start"));
       
       hoststatus &= ~(1<<MESSUNG_OK);
       
@@ -975,44 +1022,81 @@ digitalWrite(13, !digitalRead(13));
       uint16_t TEENSYVREF_Int = TEENSYVREF*100;
       
       // Batt M
-      batt_M_Spannung = (batt_M  * TEENSYVREF_Int) ;
+   //   batt_M_Spannung = (batt_M  * TEENSYVREF_Int) ;
+      batt_M_Array[batt_M_pos & 0x07] = batt_M;
+      batt_M_pos++;
+      uint8_t mpos = 0;
+      batt_M_Mitte = 0;
       
-      sendbuffer[U_M_L_BYTE + DATA_START_BYTE] = batt_M & 0x00FF;
-      sendbuffer[U_M_H_BYTE + DATA_START_BYTE] = (batt_M & 0xFF00)>>8;
+      for (mpos = 0; mpos < 8; mpos++)
+      {
+         batt_M_Mitte += batt_M_Array[mpos];
+      }
+      batt_M_Mitte /= 8;
+      batt_M_Spannung = (((batt_M_Mitte  * TEENSYVREF_Int) )* ADC_U_FAKTOR )>>10 ;
+
+      sendbuffer[U_M_L_BYTE + DATA_START_BYTE] = batt_M_Mitte & 0x00FF;
+      sendbuffer[U_M_H_BYTE + DATA_START_BYTE] = (batt_M_Mitte & 0xFF00)>>8;
+      
+  //    sendbuffer[U_M_L_BYTE + DATA_START_BYTE] = batt_M & 0x00FF;
+  //    sendbuffer[U_M_H_BYTE + DATA_START_BYTE] = (batt_M & 0xFF00)>>8;
       sendbuffer[DEVICE_BYTE + DATA_START_BYTE] |= (1<<SPANNUNG_ID);
       
       // Batt O
-      batt_O = analogRead(ADC_O);
+      batt_O = adc->analogRead(ADC_O);
       
-      sendbuffer[U_O_L_BYTE + DATA_START_BYTE] = batt_O & 0x00FF;
-      sendbuffer[U_O_H_BYTE + DATA_START_BYTE] = (batt_O & 0xFF00)>>8;
+      batt_O_Array[batt_O_pos & 0x07] = batt_O;
+      batt_O_pos++;
+      batt_O_Mitte = 0;
+      for (mpos = 0; mpos < 8; mpos++)
+      {
+         batt_O_Mitte += batt_O_Array[mpos];
+      }
+      batt_O_Mitte /= 8;
+      batt_O_Spannung = (((batt_O_Mitte  * TEENSYVREF_Int) )* ADC_U_FAKTOR )>>10 ;
+      sendbuffer[U_O_L_BYTE + DATA_START_BYTE] = batt_O_Mitte & 0x00FF;
+      sendbuffer[U_O_H_BYTE + DATA_START_BYTE] = (batt_O_Mitte & 0xFF00)>>8;
+
+ //     sendbuffer[U_O_L_BYTE + DATA_START_BYTE] = batt_O & 0x00FF;
+ //     sendbuffer[U_O_H_BYTE + DATA_START_BYTE] = (batt_O & 0xFF00)>>8;
       
        
       // Strom Charger
-      curr_A = adc->analogRead(ADC_SHUNT); // normiert auf Masse
+      curr_L = adc->analogRead(ADC_SHUNT); // normiert auf Masse
+      curr_L_Array[(curr_L_pos & 0x07)] = curr_L;
+      curr_L_pos++;
+      curr_L_Mitte = 0;
+      for (mpos = 0; mpos < 8; mpos++)
+      {
+         curr_L_Mitte += curr_L_Array[mpos];
+      }
+      curr_L_Mittebuffer = curr_L_Mitte;
+      curr_L_Mitte /= 8;
+
+      sendbuffer[STROM_A_L_BYTE + DATA_START_BYTE] = curr_L_Mitte & 0x00FF;
+      sendbuffer[STROM_A_H_BYTE + DATA_START_BYTE] = (curr_L_Mitte & 0xFF00)>>8;
+     
+      sendbuffer[I_SHUNT_L_BYTE + DATA_START_BYTE] = curr_L_Mitte & 0x00FF;
+      sendbuffer[I_SHUNT_H_BYTE + DATA_START_BYTE] = (curr_L_Mitte & 0xFF00)>>8;
+     
       
-      // Strom Balancer
-      curr_B = analogRead(ADC_AAA) - SHUNT_OFFSET;
       
+      
+       
       
       
       
       //    Serial.print(F(" ADC usbsendcounter: "));
       //     Serial.print(usbsendcounter);
-      sendbuffer[STROM_A_L_BYTE + DATA_START_BYTE] = curr_A & 0x00FF;
-      sendbuffer[STROM_A_H_BYTE + DATA_START_BYTE] = (curr_A & 0xFF00)>>8;
 
-      // Strom B  // test    
-      sendbuffer[STROM_B_L_BYTE + DATA_START_BYTE] = curr_B & 0x00FF;
-      sendbuffer[STROM_B_H_BYTE + DATA_START_BYTE] = (curr_B & 0xFF00)>>8;
-     
+      
       
       sendbuffer[DEVICE_BYTE + DATA_START_BYTE] |= (1<<STROM_ID);
       //    sendbuffer[I_SHUNT_O_L_BYTE + DATA_START_BYTE] = curr_B & 0x00FF;
       //    sendbuffer[I_SHUNT_O_H_BYTE + DATA_START_BYTE] = (curr_B & 0xFF00)>>8;
       
-      temp_SOURCE = analogRead(ADC_TEMP_SOURCE);
-      temp_BATT = analogRead(ADC_TEMP_BATT);
+      temp_SOURCE = adc->analogRead(ADC_TEMP_SOURCE);
+      temp_BATT = adc->analogRead(ADC_TEMP_BATT);
       
       sendbuffer[TEMP_SOURCE_L_BYTE + DATA_START_BYTE] = temp_SOURCE & 0x00FF;
       sendbuffer[TEMP_SOURCE_H_BYTE + DATA_START_BYTE] = (temp_SOURCE & 0xFF00)>>8;
@@ -1021,74 +1105,129 @@ digitalWrite(13, !digitalRead(13));
       sendbuffer[DEVICE_BYTE + DATA_START_BYTE] |= (1<<TEMP_ID);
       
       U_Balance = analogRead(ADC_BALANCE);
-      sendbuffer[BALANCE_L_BYTE + DATA_START_BYTE] = U_Balance & 0x00FF;
-      sendbuffer[BALANCE_H_BYTE + DATA_START_BYTE] = (U_Balance & 0xFF00)>>8;
+      U_Balance_Array[(U_Balance_pos & 0x07)] = U_Balance;
+      U_Balance_pos++;
+      U_Balance_Mitte = 0;
+      for (mpos = 0; mpos < 8; mpos++)
+      {
+         U_Balance_Mitte += U_Balance_Array[mpos];
+      }
+      U_Balance_Mittebuffer = U_Balance_Mitte;
+      U_Balance_Mitte /= 8;
+
+       
+      sendbuffer[BALANCE_L_BYTE + DATA_START_BYTE] = U_Balance_Mitte & 0x00FF;
+      sendbuffer[BALANCE_H_BYTE + DATA_START_BYTE] = (U_Balance_Mitte & 0xFF00)>>8;
     
       
       interrupts();
       
-      Serial.print(F("ADC batt_M "));
-      Serial.print(batt_M);
+      Serial.println(F("MESSUNG_OK "));
+      Serial.print(F("Batt_M "));
+      Serial.print(batt_M_Mitte);
+      Serial.print(F(" batt_M_Spannung "));
+      Serial.print(batt_M_Spannung);
+     
       
-      Serial.print(F(" ADC batt_O "));
-      Serial.print(batt_O);
-      
-      Serial.print(F(" PWM_A: "));
-      Serial.print(PWM_A);
+      Serial.print(F(" Batt_O "));
+      Serial.print(batt_O_Mitte);
+      Serial.print(F(" batt_O_Spannung "));
+      Serial.print(batt_O_Spannung);
+ 
 
-      Serial.print(F(" curr_A: ")); // shunt
-      Serial.println(curr_A);
-      Serial.print(F("hoststatus: "));
-      Serial.println(hoststatus);
+      Serial.print(F(" Balance "));
+      Serial.print(U_Balance_Mitte);
+     
+
+      Serial.print(F(" curr_L: ")); // shunt
+      Serial.println(curr_L_Mitte);
+
+//      Serial.print(F("hoststatus: "));
+ //     Serial.println(hoststatus);
 
       if (hoststatus & (1<<MESSUNG_RUN))
       {
-         Serial.print(F("hoststatus OK "));
+         Serial.print(F("MESSUNG_RUN OK "));
+         Serial.print(F(" hoststatus: "));
+         Serial.println(hoststatus);
+
+         /*
          Serial.print(F(" batt_M "));
-         Serial.print(batt_M);
+         Serial.print(batt_M_Mitte);
          
          Serial.print(F(" batt_O "));
-         Serial.println(batt_O);
+         Serial.println(batt_O_Mitte);
+         
+         Serial.print(F(" Balance "));
+         Serial.print(U_Balance_Mitte);
+        
 
+         Serial.print(F(" curr_L: ")); // shunt
+         Serial.println(curr_L_Mitte);
+          */
+/*
          Serial.print(F(" BATT_MIN_RAW "));
          Serial.print(BATT_MIN_RAW);
          
          Serial.print(F(" BATT_MAX_RAW "));
          Serial.println(BATT_MAX_RAW);
-
+*/
          //loadstatus &= ~(1<<BATT_DOWN_BIT);
          
          
-         if ((batt_M < BATT_MIN_RAW) || (batt_O < BATT_MIN_RAW))
+         if ((batt_M_Mitte < BATT_MIN_RAW) || (batt_O_Mitte < BATT_MIN_RAW))
          {
-            Serial.print(F("STROM_REP_RAW: "));
+            Serial.print(F("STROM_LO_RAW: "));
             //hoststatus |= (1<<LADUNG_RUN); 
-            Serial.println(curr_A);
+            Serial.println(curr_L_Mitte);
             
-            PWM_A = STROM_LO_RAW;
+            PWM_A = PWM_REP;
             
             analogWrite(A14,PWM_A);
          }
-         else if (((batt_M >= BATT_MIN_RAW) && (batt_O >= BATT_MIN_RAW)) && ((batt_M < BATT_MAX_RAW) || (batt_O < BATT_MAX_RAW)))
+         //PWM_A_SET
+         if (((batt_M_Mitte >= BATT_MIN_RAW) && (batt_O_Mitte >= BATT_MIN_RAW)) && ((batt_M_Mitte <= BATT_MAX_RAW) || (batt_O_Mitte  <= BATT_MAX_RAW)))
          {
-            Serial.print(F(" < STROM_HI_RAW: "));
-            Serial.println(curr_A);
-            
-            if ((PWM_A < STROM_HI_RAW) && (hoststatus & (1<<LADUNG_RUN)) && (!(loadstatus & (1<<BATT_DOWN_BIT))))
+            Serial.print(F(" strom ist < STROM_HI_RAW. curr_L: "));
+            Serial.print(curr_L_Mitte);
+            Serial.print(F(" PWM_A: "));
+            Serial.print(PWM_A);
+            Serial.print(F(" MAX_PWM_A: "));
+            Serial.print(MAX_PWM_A);
+            Serial.print(F(" hoststatus: "));
+            Serial.print(hoststatus);
+            Serial.print(F(" loadstatus: "));
+            Serial.println(loadstatus);
+
+            if ((curr_L_Mitte < STROM_HI_RAW) && (hoststatus & (1<<LADUNG_RUN)) && (!(loadstatus & (1<<BATT_DOWN_BIT))))
             {
-               PWM_A += 4;
-            
+               Serial.print(F("  PWM Action "));
+               if (PWM_A < (MAX_PWM_A - 17))
+               {
+                  Serial.print(F("  PWM_A++16: "));
+                  PWM_A += 16;
+               }
+               else if (PWM_A > (MAX_PWM_A +8))
+               {
+                  Serial.print(F("  PWM_A--8: "));
+                  PWM_A -= 8;
+               }
+               //Serial.print(F("                        PWM_A++: "));
+               Serial.println(PWM_A);
+
                analogWrite(A14,PWM_A);
             }
          }
          
-         if ((batt_M > BATT_MAX_RAW) || (batt_O > BATT_MAX_RAW))
+         if ((batt_M_Mitte > BATT_MAX_RAW) || (batt_O_Mitte > BATT_MAX_RAW))
          {
-            Serial.print(F("< STROM_REP_RAW: "));
+            Serial.print(F("Strom ist > BATT_MAX_RAW curr_L: "));
             //hoststatus &= ~(1<<LADUNG_RUN);  // Ladungszyklus beenden
             loadstatus |= (1<<BATT_DOWN_BIT); // Strom absenken
-            Serial.println(curr_A);
-            if ((PWM_A > STROM_REP_RAW) )
+            Serial.print(curr_L_Mitte);
+            Serial.print(F(" PWM_A: "));
+            Serial.println(PWM_A);
+            if ((curr_L_Mitte > STROM_REP_RAW) )
             {
                //PWM_A -= 16;
                //analogWrite(A14,PWM_A);
@@ -1098,26 +1237,30 @@ digitalWrite(13, !digitalRead(13));
             
           
          }
+         
          if (loadstatus &(1<<BATT_DOWN_BIT))
          {
-            if (PWM_A > (STROM_REP_RAW + 8) )
+            if (PWM_A > (PWM_REP + 6) )
             {
+               
                PWM_A -= 8;
+               Serial.print(F(" PWM_A--6: "));
+               Serial.println(PWM_A);
                analogWrite(A14,PWM_A);
                
             }// Strom absenken
             
-            Serial.println(curr_A);
+            Serial.println(curr_L);
             
          }
 
       }
        
       
-      if ((batt_M > BATT_OFF_RAW) || (batt_O > BATT_OFF_RAW))
+      if ((batt_M_Mitte > BATT_OFF_RAW) || (batt_O_Mitte > BATT_OFF_RAW))
       {
          Serial.print(F("STROM_OFF_RAW: "));
-         Serial.println(curr_A);
+         Serial.println(curr_L_Mitte);
 
          PWM_A = 0;
          analogWrite(A14,PWM_A);
@@ -1125,7 +1268,7 @@ digitalWrite(13, !digitalRead(13));
       }
 
       
-      if (curr_A < 20)
+      if (curr_L < 20)
       {
          Serial.print(F(" ***"));
       }
@@ -1155,10 +1298,10 @@ digitalWrite(13, !digitalRead(13));
       }
       // hoststatus |= (1<<SEND_OK);
       // messungcounter uebergeben
-      Serial.print(F(" strommessungcounter: "));
-      Serial.print(strommessungcounter);
-      Serial.print(F(" messungcounter: "));
-      Serial.println(messungcounter);
+ //     Serial.print(F(" strommessungcounter: "));
+ //     Serial.print(strommessungcounter);
+ //     Serial.print(F(" messungcounter: "));
+ //     Serial.println(messungcounter);
       
       
       strommessungcounter++;
@@ -1196,8 +1339,8 @@ digitalWrite(13, !digitalRead(13));
       senderfolg = RawHID.send((void*)sendbuffer, 100);
       if (senderfolg > 0) 
       {
-         Serial.print(F(" ADC packet "));
-         Serial.println(packetcount);
+         //Serial.print(F(" ADC packet "));
+         //Serial.println(packetcount);
          packetcount = packetcount + 1;
          
       } else {
@@ -1232,14 +1375,27 @@ digitalWrite(13, !digitalRead(13));
             {
                // MARK: STROM_SET  
                Serial.print(("STROM_SET  0x88 "));
-               PWM_A = ((recvbuffer[STROM_A_H_BYTE]) << 8) | recvbuffer[STROM_A_L_BYTE] ;
-               Serial.print("STROM PWM_A:");
-               Serial.println(PWM_A); 
+               
+               PWM_A_SET = ((recvbuffer[STROM_A_H_BYTE]) << 8) | recvbuffer[STROM_A_L_BYTE] ;
+               //Serial.print("STROM PWM_A:");
+               //Serial.println(PWM_A); 
                //analogWrite(23,PWM_A);
-               analogWrite(A14,PWM_A);
+               //analogWrite(A14,PWM_A);
                
                
             }break;
+               
+            case MAX_STROM_SET:
+            {
+               Serial.print(("MAX_STROM_SET  0x90 "));
+               
+               MAX_PWM_A = ((recvbuffer[MAX_STROM_H_BYTE]) << 8) | recvbuffer[MAX_STROM_L_BYTE] ;
+               //Serial.print("MAX STROM MAX_PWM_A:");
+               //Serial.println(MAX_PWM_A); 
+ 
+            
+            }break;   
+               
                  
                //   *********************************************************************            
                // MARK: READ_START  
@@ -1277,6 +1433,10 @@ digitalWrite(13, !digitalRead(13));
  //            clear_sendbuffer();
                cli();
                Serial.print(F("MESSUNG_START"));
+               
+               MAX_PWM_A = recvbuffer[MAX_STROM_L_BYTE] | (recvbuffer[MAX_STROM_H_BYTE]<<8);
+               Serial.print(F(" MAX_PWM_A "));
+               Serial.println(MAX_PWM_A);
                //uint8_t ee = eeprom_read_word(&eeprom_intervall);
                //lcd_gotoxy(12,3);
                //lcd_putint(ee);
