@@ -23,8 +23,6 @@
 
 #include "Arduino.h"
 
-
-
 #include "gpio_MCP23S17.h"
 #include <SPI.h>
 // Include application, user and local libraries
@@ -39,7 +37,7 @@
 
 //#include "analog.h"
 
-#include "display.h"
+//#include "display.h"
 
 // define constants
 //#define USB_DATENBREITE 64
@@ -212,7 +210,7 @@ IntervalTimer              stromTimer;
 #define MANUELL_OK         0
 
         
-
+#define CS_PIN 13
 
 
 // Prototypes
@@ -259,9 +257,9 @@ void slaveinit(void)
    
    // SPI
    pinMode(CS_PIN, OUTPUT);// CS
-   pinMode(MOSI_PIN, OUTPUT);// MOSI
-   pinMode(MISO_PIN, INPUT);// MISO
-   pinMode(SCK_PIN, OUTPUT);// SCK
+   pinMode(MOSI, OUTPUT);// MOSI
+   pinMode(MISO, INPUT);// MISO
+   pinMode(SCK, OUTPUT);// SCK
    
    pinMode(CHARGE_SET, OUTPUT);
    pinMode(CHARGE_RESET, OUTPUT);
