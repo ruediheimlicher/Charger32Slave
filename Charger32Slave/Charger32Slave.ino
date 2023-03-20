@@ -39,6 +39,11 @@
 
 //#include "display.h"
 
+//#include "Wire.h"
+#include "Adafruit_GFX.h"
+#include "Adafruit_SSD1306.h"
+
+
 // define constants
 //#define USB_DATENBREITE 64
 
@@ -52,6 +57,7 @@ ADC *adc = new ADC(); // adc object
 // !!! Help http://bit.ly/2CL22Qp
 
 // 
+
 
 //
 

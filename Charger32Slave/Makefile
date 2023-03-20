@@ -43,7 +43,7 @@
 #   [W] WS2812Serial Wire [X] XBee XPT2046_Touchscreen 
 #   [i] i2c_t3 [k] ks0108 [s] ssd1351 [x] x10 
 #
-APP_LIBS_LIST = ADC SPI EEPROM
+APP_LIBS_LIST = ADC SPI EEPROM Wire 
 
 # List user's libraries here
 # !!! Help: http://bit.ly/2AEscDx
@@ -51,21 +51,20 @@ APP_LIBS_LIST = ADC SPI EEPROM
 #
 # USER = [L] LiquidCrystal_I2C 
 #
-USER_LIBS_LIST = 0
+USER_LIBS_LIST = 
 
 # List local libraries here
 # !!! Help: http://bit.ly/2juEP91
 # default = empty = all
 #
-LOCAL_LIBS_LIST =
+LOCAL_LIBS_LIST = Adafruit_SSD1306 Adafruit_GFX
 
 # List core, application and user's libraries to be excluded
 # !!! Help: http://bit.ly/2AijUOI
 # For example, WiFi may crash on Arduino 1.0.2, Esplora on Arduino 1.0.3, Firmata on Teensy 3.0,
 #   OneWire on MPIDE 0023, HardwareSerial may conflict with MarlinSerial
 #
-#EXCLUDE_LIBS = Firmata WiFi Esplora OneWire Robot_Control Robot_Control/utility Robot_Motor
-
+EXCLUDE_LIBS = Firmata WiFi Esplora OneWire Robot_Control Robot_Control/utility Robot_Motor RF24
 
 # Warning options
 # ----------------------------------
