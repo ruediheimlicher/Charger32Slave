@@ -23,6 +23,8 @@
 
 #include "Arduino.h"
 
+
+
 #include "gpio_MCP23S17.h"
 #include <SPI.h>
 // Include application, user and local libraries
@@ -37,7 +39,7 @@
 
 //#include "analog.h"
 
-#include "SPI.h"
+#include "display.h"
 
 // define constants
 //#define USB_DATENBREITE 64
@@ -51,7 +53,9 @@ ADC *adc = new ADC(); // adc object
 // Include application, user and local libraries
 // !!! Help http://bit.ly/2CL22Qp
 
+// 
 
+//
 
 
 // Define variables and constants
@@ -245,8 +249,8 @@ void slaveinit(void)
   // pinMode(LADESTROM_PWM_A, OUTPUT);
   // pinMode(LADESTROM_PWM_B, OUTPUT);
    
-   pinMode(LOAD_START, INPUT); // Laden START manuell
-   pinMode(LOAD_STOP, INPUT); // Laden STOP manuell
+   pinMode(LOAD_START, OUTPUT); // Laden START Programm
+   pinMode(LOAD_STOP, OUTPUT); // Laden STOP Programm
    
 //   pinMode(25, OUTPUT);// OC1A
 //   pinMode(26, OUTPUT);// OC1A
@@ -254,10 +258,16 @@ void slaveinit(void)
  //  pinMode(24, OUTPUT);// OC2A
    
    // SPI
-   pinMode(10, OUTPUT);// CS
-   pinMode(11, OUTPUT);// MOSI
-   pinMode(12, INPUT);// MISO
-   pinMode(13, OUTPUT);// SCK
+   pinMode(CS_PIN, OUTPUT);// CS
+   pinMode(MOSI_PIN, OUTPUT);// MOSI
+   pinMode(MISO_PIN, INPUT);// MISO
+   pinMode(SCK_PIN, OUTPUT);// SCK
+   
+   pinMode(CHARGE_SET, OUTPUT);
+   pinMode(CHARGE_RESET, OUTPUT);
+   pinMode(DETECT_RESET, INPUT);
+   
+   pinMode(LOAD_MANUELL, INPUT_PULLUP);
 }
 
 void ADC_init(void) 
@@ -276,6 +286,8 @@ void ADC_init(void)
    
    
 }
+
+
 
 
 void clear_sendbuffer(void)
@@ -524,6 +536,158 @@ void adctimerfunction()
    }
 }
 
+void stop_Load()
+{
+   
+   Serial.println(F("ISR MESSUNG_STOP "));
+   cli();
+   hoststatus &= ~(1<<MESSUNG_RUN);
+   hoststatus &= ~(1<<LADUNG_RUN); 
+   //hoststatus |= (1<<SEND_OK); 
+   clear_sendbuffer();
+   sendbuffer[0] = MESSUNG_STOP;
+   hoststatus &= ~(1<<USB_READ_OK);
+   
+   hoststatus  |= (1<<TEENSY_MMC_OK);
+   // lcd_clr_line(1);
+   //lcd_gotoxy(12,0);
+   //lcd_putc('h');
+   //lcd_putc(':');
+   //lcd_puthex(code); // code
+   //lcd_putc('*');
+   usbstatus = taskcode;
+   sd_status = recvbuffer[1]; // code fuer SD: schreiben, stoppen
+   
+   sendbuffer[0] = MESSUNG_STOP;
+   
+  /* 
+   sendbuffer[BLOCKOFFSETLO_BYTE] = blockcounter & 0x00FF;
+   sendbuffer[BLOCKOFFSETHI_BYTE] = (blockcounter & 0xFF00)>>8;
+   
+   sendbuffer[DATACOUNT_LO_BYTE] = messungcounter & 0x00FF;
+   sendbuffer[DATACOUNT_HI_BYTE] = (messungcounter & 0xFF00)>>8;
+   */
+   
+   sendbuffer[7] = 77;
+   sendbuffer[USB_PACKETSIZE-1] = 77;
+   
+//  lcd_gotoxy(6,3);
+//   lcd_putint(blockcounter & 0x00FF);
+
+//   eeprom_update_word(&eeprom_blockcount,blockcounter);
+//   eeprom_update_word(&eeprom_messungcount,messungcounter);
+   
+   //          lcd_gotoxy(19,1);
+   //         lcd_putc('+');
+   //         lcd_gotoxy(12,1);
+   //          lcd_puts("m stop");
+   
+   //uint8_t usberfolg = usb_rawhid_send((void*)sendbuffer, 50);
+   sei();
+   // Haltestrom einschalten
+   PWM_A = STROM_LO_RAW;
+   
+   analogWrite(A14,PWM_A);
+   
+   hoststatus & (1<<SEND_OK);
+   
+   
+   digitalWrite(LOAD_STOP,1);
+   _delay_ms(100);
+  digitalWrite(LOAD_STOP,0);
+
+}
+
+void start_Load()
+{
+   hoststatus |= (1<<SEND_OK); 
+   hoststatus |= (1<<MESSUNG_RUN); 
+   hoststatus |= (1<<LADUNG_RUN); 
+   
+   loadstatus &= ~(1<<BATT_DOWN_BIT);
+   digitalWrite(LOAD_START,1);
+   _delay_ms(100);
+   digitalWrite(LOAD_START,0);
+   
+   //            clear_sendbuffer();
+   cli();
+   Serial.print(F("MANUELL MESSUNG_START"));
+   
+   MAX_PWM_A = 500; //recvbuffer[MAX_STROM_L_BYTE] | (recvbuffer[MAX_STROM_H_BYTE]<<8);
+   
+   Serial.print(F(" MAX_PWM_A "));
+   Serial.println(MAX_PWM_A);
+   //uint8_t ee = eeprom_read_word(&eeprom_intervall);
+   //lcd_gotoxy(12,3);
+   //lcd_putint(ee);
+   //   hoststatus |= (1<<USB_READ_OK);
+   
+   adcstatus |= (1<<FIRSTRUN);
+   
+   messungcounter = 0;
+   blockcounter = 0;
+   sendbuffer[0] = MESSUNG_START;
+   blockdatacounter = 0;            // Zaehler fuer Data auf dem aktuellen Block
+   writedatacounter = 0;
+   linecounter=0;
+   intervallcounter=0;
+   
+   usbstatus = taskcode;
+   
+   sd_status = recvbuffer[1]; 
+   
+   mmcwritecounter = 0; // Zaehler fuer Messungen auf MMC
+   
+   saveSDposition = 0; // Start der Messung immer am Anfang des Blocks
+   
+   // intervall
+   intervall = 1;//recvbuffer[TAKT_LO_BYTE] | (recvbuffer[TAKT_HI_BYTE]<<8);
+   Serial.print(F("intervall "));
+   Serial.print(intervall);
+   
+   //               abschnittnummer = recvbuffer[ABSCHNITT_BYTE]; // Abschnitt,
+   
+   blockcounter = 0;//recvbuffer[BLOCKOFFSETLO_BYTE] | (recvbuffer[BLOCKOFFSETHI_BYTE]<<8);
+   //  Serial.print(F(" blockcounter "));
+   //  Serial.println(blockcounter);
+   
+   startminute  = 0;//recvbuffer[STARTMINUTELO_BYTE] | (recvbuffer[STARTMINUTEHI_BYTE]<<8); // in SD-Header einsetzen
+   
+   // Kanalstatus lesen. Wird beim Start der Messungen uebergeben
+   
+   PWM_A = STROM_LO_RAW;
+   analogWrite(A14,PWM_A);
+   
+   
+   sendbuffer[USB_PACKETSIZE-1] = 75;
+   saveSDposition = 0; // erste Messung sind header
+   sei();
+   
+   // control
+   /*
+    #define STROM_HI  1000 // mA
+    #define STROM_LO  50   // mA
+    #define STROM_REP  100 // Reparaturstrom bei Unterspannung
+    
+    */
+   // _delay_ms(1000);
+   //uint8_t usberfolg = usb_rawhid_send((void*)sendbuffer, 50);
+   
+}
+
+void Reset_ISR()
+{
+   Serial.print(F(" RESET \n"));
+   stop_Load();
+}
+
+void Start_ISR()
+{
+   Serial.print(F(" START \n"));
+   start_Load();
+}
+
+
 // Add setup code
 void setup()
 {
@@ -545,18 +709,22 @@ void setup()
    analogWriteResolution(10);
 
    TEENSYVREF_Int = TEENSYVREF*100;
-//   SPI.begin();
+   SPI.begin();
    
 //   batt_MAX_raw = (U_MAX <<4) / (TEENSYVREF * 100)/ADC_U_FAKTOR;
    volatile uint16_t           batt_MAX_raw=0;
    volatile uint16_t           batt_OFF_raw=0;
    
    // Tasten zuteilen
-   tastenstatusarray[0].pin = LOAD_START; // Taste Laden Start
-   tastenstatusarray[1].pin = LOAD_STOP; // Taste Laden Start
+ //  tastenstatusarray[0].pin = LOAD_START; // Taste Laden Start
+ //  tastenstatusarray[1].pin = LOAD_STOP; // Taste Laden Start
    pinMode(BLINKLED,OUTPUT);
-
+   
+   attachInterrupt(digitalPinToInterrupt(DETECT_RESET), Reset_ISR, RISING);
+   attachInterrupt(digitalPinToInterrupt(LOAD_MANUELL), Start_ISR, RISING);
+   
 }
+
 
 void f_to_a(float n, char *res, int afterpoint)
 {
@@ -861,7 +1029,12 @@ void loop()
          
          lcd_gotoxy(16,0);
          lcd_putint12(adctimersekunde);
+         lcd_gotoxy(0,0);
+         lcd_puts("PW");
+         lcd_putint12(PWM_A);
 
+         lcd_puts(" M_PW");
+         lcd_putint12(MAX_PWM_A);
          lcd_gotoxy(0,1);
          lcd_putc('O');
          //lcd_putc(':');
@@ -1424,15 +1597,24 @@ void loop()
                //   ********************************************************************* 
             case MESSUNG_START:
             {
+               digitalWrite(LOAD_START,1);
+               _delay_ms(100);
+               digitalWrite(LOAD_START,0);
+               
+               Serial.print(F("MESSUNG_START"));
+               
+               
+               
+               
                hoststatus |= (1<<SEND_OK); 
                hoststatus |= (1<<MESSUNG_RUN); 
                hoststatus |= (1<<LADUNG_RUN); 
                
                loadstatus &= ~(1<<BATT_DOWN_BIT);
                
- //            clear_sendbuffer();
+               //            clear_sendbuffer();
                cli();
-               Serial.print(F("MESSUNG_START"));
+               
                
                MAX_PWM_A = recvbuffer[MAX_STROM_L_BYTE] | (recvbuffer[MAX_STROM_H_BYTE]<<8);
                Serial.print(F(" MAX_PWM_A "));
@@ -1455,7 +1637,7 @@ void loop()
                usbstatus = taskcode;
                
                sd_status = recvbuffer[1]; 
-                
+               
                mmcwritecounter = 0; // Zaehler fuer Messungen auf MMC
                
                saveSDposition = 0; // Start der Messung immer am Anfang des Blocks
@@ -1464,35 +1646,35 @@ void loop()
                intervall = recvbuffer[TAKT_LO_BYTE] | (recvbuffer[TAKT_HI_BYTE]<<8);
                Serial.print(F("intervall "));
                Serial.print(intervall);
-                
+               
                //               abschnittnummer = recvbuffer[ABSCHNITT_BYTE]; // Abschnitt,
                
                blockcounter = recvbuffer[BLOCKOFFSETLO_BYTE] | (recvbuffer[BLOCKOFFSETHI_BYTE]<<8);
                Serial.print(F(" blockcounter "));
                Serial.println(blockcounter);
-            
+               
                startminute  = recvbuffer[STARTMINUTELO_BYTE] | (recvbuffer[STARTMINUTEHI_BYTE]<<8); // in SD-Header einsetzen
                
                // Kanalstatus lesen. Wird beim Start der Messungen uebergeben
                
                // nicht verwendet
-                uint8_t kan = 0;
-          //     lcd_gotoxy(8,2);
+               uint8_t kan = 0;
+               //     lcd_gotoxy(8,2);
                for(kan = 0;kan < 4;kan++)
                {
-          //        lcd_putint2(kanalstatusarray[kan]);
+                  //        lcd_putint2(kanalstatusarray[kan]);
                }
-        //       _delay_ms(100);          
+               //       _delay_ms(100);          
                for(kan = 0;kan < 4;kan++)
                {
                   kanalstatusarray[kan] = recvbuffer[KANAL_BYTE + kan];
                }
                
-          //     lcd_gotoxy(8,2);
+               //     lcd_gotoxy(8,2);
                for(kan = 0;kan < 4;kan++)
                {
-           //       lcd_putint2(kanalstatusarray[kan]);
-               
+                  //       lcd_putint2(kanalstatusarray[kan]);
+                  
                }
                PWM_A = STROM_LO_RAW;
                analogWrite(A14,PWM_A);
@@ -1508,11 +1690,8 @@ void loop()
                 #define STROM_HI  1000 // mA
                 #define STROM_LO  50   // mA
                 #define STROM_REP  100 // Reparaturstrom bei Unterspannung
-
+                
                 */
-                // _delay_ms(1000);
-               //uint8_t usberfolg = usb_rawhid_send((void*)sendbuffer, 50);
-               
             }break;
                
                //   *********************************************************************                
@@ -1520,7 +1699,9 @@ void loop()
                //   *********************************************************************                
             case MESSUNG_STOP:
             {
+               
                Serial.println(F("MESSUNG_STOP "));
+               
                cli();
                hoststatus &= ~(1<<MESSUNG_RUN);
                hoststatus &= ~(1<<LADUNG_RUN); 
@@ -1551,7 +1732,7 @@ void loop()
                
                lcd_gotoxy(6,3);
                lcd_putint(blockcounter & 0x00FF);
-
+               
                eeprom_update_word(&eeprom_blockcount,blockcounter);
                eeprom_update_word(&eeprom_messungcount,messungcounter);
                
@@ -1566,7 +1747,11 @@ void loop()
                PWM_A = STROM_LO_RAW;
                
                analogWrite(A14,PWM_A);
-
+               
+               digitalWrite(LOAD_STOP,1);
+               _delay_ms(100);
+               digitalWrite(LOAD_STOP,0);
+               
             }break;
                
 
