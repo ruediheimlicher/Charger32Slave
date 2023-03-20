@@ -39,7 +39,7 @@
 
 //#include "analog.h"
 
-#include "display.h"
+//#include "display.h"
 
 // define constants
 //#define USB_DATENBREITE 64
@@ -53,9 +53,72 @@ ADC *adc = new ADC(); // adc object
 // Include application, user and local libraries
 // !!! Help http://bit.ly/2CL22Qp
 
-// 
+// oled 
+// ASCII: https://www.i8086.de/zeichensatz/code-page-437.html
 
-//
+
+#define OLED_RESET -1
+
+#define TASTEOK            1
+#define AKTIONOK           2
+#define UPDATEOK           3
+
+uint16_t  cursorpos[8][8]={}; // Aktueller screen: werte fuer page und darauf liegende col fuer den cursor
+uint16_t  posregister[8][8]; // Aktueller screen: werte fuer page und daraufliegende col fuer Menueintraege (hex). geladen aus progmem
+
+
+elapsedMillis              zeitintervall;
+uint8_t           sekundencounter = 0;
+
+uint8_t           startcounter=0; // timeout-counter beim Start von Settings, schneller als manuellcounter. Ermoeglicht Dreifachklick auf Taste 5
+uint8_t           settingstartcounter=0; // Counter fuer Klicks auf Taste 5elapsedMicros sinceusb;
+
+elapsedMicros sincelastbeepA;
+
+elapsedMillis sincelastseccond;
+elapsedMillis sinceimpulsstart;
+
+uint8_t char_height_mul = 0;
+uint8_t char_width_mul = 0;
+
+uint8_t    curr_model; // aktuelles modell
+uint8_t    speichermodel=0;
+uint8_t    curr_kanal=0; // aktueller kanal
+uint8_t    curr_impuls=0; // aktueller impuls
+
+uint8_t    curr_setting=0; // aktuelles Setting fuer Modell
+uint8_t   speichersetting=0;
+
+uint8_t    curr_trimmkanal=0; // aktueller  Kanal fuerTrimmung
+uint8_t    curr_trimmung=0; // aktuelle  Trimmung fuer Trimmkanal
+
+
+uint8_t    curr_screen = 0; // aktueller screen
+uint8_t    last_screen=0; // letzter screen
+
+uint8_t    curr_page=7; // aktuelle page
+uint8_t    curr_col=0; // aktuelle colonne
+
+uint8_t    curr_cursorzeile=0; // aktuelle zeile des cursors
+uint8_t    curr_cursorspalte=0; // aktuelle colonne des cursors
+uint8_t    last_cursorzeile=0; // letzte zeile des cursors
+uint8_t    last_cursorspalte=0; // letzte colonne des cursors
+
+
+ uint8_t       curr_levelarray[8];
+ uint8_t       curr_expoarray[8];
+ uint8_t       curr_mixarray[8];
+ uint8_t       curr_funktionarray[8];
+ uint8_t       curr_statusarray[8];
+ uint8_t       curr_ausgangarray[8];
+
+ uint8_t       curr_devicearray[8];
+ //uint8_t       curr_setting=0; // aktuelles Setting fuer Modell
+
+
+uint16_t    blink_cursorpos=0xFFFF;
+
+// end oled
 
 
 // Define variables and constants
