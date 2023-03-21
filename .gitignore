@@ -1,4 +1,3 @@
-Makefile
 build/*
 *.eep
 *.elf
@@ -10,4 +9,4 @@ build/*
 *.hex
 *.o
 .dep/
-Adafruit_*
+Libraries/Adafruit_GFX*

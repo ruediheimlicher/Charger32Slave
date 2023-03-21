@@ -51,7 +51,7 @@ APP_LIBS_LIST = ADC SPI EEPROM
 #
 # USER = [L] LiquidCrystal_I2C 
 #
-USER_LIBS_LIST = Adafruit_GFX_Library Adafruit_SSD1306
+USER_LIBS_LIST = 0 //Adafruit_GFX_Library Adafruit_SSD1306
 
 # List local libraries here
 # !!! Help: http://bit.ly/2juEP91

@@ -31,6 +31,8 @@
 
 #define ADC_BALANCE        A3 // 17
 
+#define ADC_TASTATUR           A9
+
 #define CHARGE_SET          18 // 18
 #define CHARGE_RESET        19 // 18
 #define DETECT_RESET        20 // 18
@@ -61,6 +63,8 @@
 
 #define ADC_U_BIT 0 // ISR: U messen
 #define ADC_I_BIT 1 // ISR: I messen
+
+#define ADC_TASTATURBIT 4
 
 #define U_MIN  3.0
 #define U_OFF  2.5

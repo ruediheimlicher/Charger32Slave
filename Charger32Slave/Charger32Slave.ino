@@ -35,9 +35,10 @@
 #include <ADC.h>
 #include <ADC_util.h>
 
-#include "Adafruit_GFX.h"
-#include "Adafruit_SSD1306.h"
+//#include "Adafruit_GFX.h"
+//#include "Adafruit_SSD1306.h"
 
+/*
 #define OLED_DC     6
 #define OLED_CS     10
 #define OLED_RESET  -1
@@ -45,6 +46,7 @@ Adafruit_SSD1306 display(OLED_DC, OLED_RESET, OLED_CS);
 #if (SSD1306_LCDHEIGHT != 32)
 #error("Height incorrect, please fix Adafruit_SSD1306.h!");
 #endif
+ */
 //#include "analog.h"
 
 //#include "display.h"
@@ -248,6 +250,8 @@ void slaveinit(void)
    pinMode(ADC_TEMP_BATT, INPUT);
    
    pinMode(ADC_BALANCE, INPUT);
+   
+   pinMode(ADC_TASTATUR,INPUT);
    
    //LCD
    pinMode(LCD_RSDS_PIN, OUTPUT);
@@ -523,6 +527,7 @@ void adctimerfunction()
 {
    OSZIBTOGG();
    sekundentimercounter++;
+   adcstatus |= (1<<ADC_TASTATURBIT);
    if (sekundentimercounter == 50)
    {
    }
@@ -540,6 +545,7 @@ void adctimerfunction()
       sekundentimercounter=0;
       adctimersekunde++;
       //digitalWriteFast(OSZI_PULS_A, !digitalReadFast(OSZI_PULS_A));
+      
       OSZIATOGG();
    }
 }
@@ -1013,6 +1019,10 @@ void loop()
    }
    }
    */
+   if(adcstatus & (1<<ADC_TASTATURBIT))
+   {
+      tastaturwert =  adc->analogRead(ADC_TASTATUR);
+   }
    loopcount0+=1;
    if (loopcount0==0x0FFF)
    {
