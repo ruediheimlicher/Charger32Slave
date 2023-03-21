@@ -113,6 +113,18 @@ uint8_t                 U_Balance_pos = 0; // position im ringbuffer
 uint16_t                U_Balance_Mitte = 0;  // gleitender Mittelwert
 uint16_t                U_Balance_Mittebuffer = 0; 
 
+// Tastatur
+volatile uint8_t           Tastenindex=0;
+volatile uint16_t          Tastenwert=0;
+volatile uint8_t           adcswitch=0;
+volatile uint16_t          lastTastenwert=0;
+volatile int16_t           Tastenwertdiff=0;
+volatile uint16_t          tastaturcounter=0;
+volatile uint8_t           tastaturstatus=0;
+
+#define TASTEOK            1
+#define AKTIONOK           2
+#define UPDATEOK           3
 
 volatile uint16_t  sekundentimercounter = 0;
 volatile uint16_t adctimersekunde = 0;
@@ -238,6 +250,9 @@ void slaveinit(void)
    pinMode(ADC_TEMP_BATT, INPUT);
    
    pinMode(ADC_BALANCE, INPUT);
+   
+   pinMode(ADC_TASTATUR,INPUT);
+
    
    //LCD
    pinMode(LCD_RSDS_PIN, OUTPUT);
@@ -513,6 +528,8 @@ void adctimerfunction()
 {
    OSZIBTOGG();
    sekundentimercounter++;
+   adcstatus |= (1<<ADC_TASTATURBIT);
+
    if (sekundentimercounter == 50)
    {
    }
@@ -683,6 +700,34 @@ void Start_ISR()
 {
    Serial.print(F(" START \n"));
    start_Load();
+}
+
+uint8_t Tastenwahl(uint16_t Tastaturwert)
+{
+     // Tastatur2 // Reihenfolge anders
+   //   
+   if(Tastaturwert > WERT1/2)
+   {
+      if (Tastaturwert < WERT1) // 76
+         return 1;
+      if (Tastaturwert < WERT2) // 124
+         return 2;
+      if (Tastaturwert < WERT3) // 200
+         return 3;
+      if (Tastaturwert < WERT4) // 276
+         return 4 ;
+      if (Tastaturwert < WERT5) // 354
+         return 5;
+      if (Tastaturwert < WERT6) // 442
+         return 6;
+      if (Tastaturwert < WERT7) // 557
+         return 7;
+      if (Tastaturwert < WERT8) // 672
+         return 8;
+      if (Tastaturwert < WERT9) // 861
+         return 9;
+   }
+   return 0xFF;
 }
 
 
@@ -978,29 +1023,77 @@ elapsedMillis sinceCheckTaste;
 // Add loop code
 void loop()
 {
-   /*
-   if (sincePrellcheck > 5)
+    
+   // MARK: - Tastatur ADC
+   if(adcstatus & (1<<ADC_TASTATURBIT))
    {
-      sincePrellcheck = 0;
-      debounce_ISR();
+      //Serial.printf("A");
+      Tastenwert =  adc->analogRead(ADC_TASTATUR);
+      if (Tastenwert>10)
+      {
+         //Serial.printf("A Tastenwert: \t%d\n",Tastenwert);
+         if (!(tastaturstatus & (1<<TASTEOK)))
+         {
+            //Serial.printf("B tastaturstatus: \t%d\n",tastaturstatus);
+            Tastenwertdiff = Tastenwert - lastTastenwert;
+            if (Tastenwert > lastTastenwert)
+            {
+               Tastenwertdiff = Tastenwert - lastTastenwert;
+            }
+            else 
+            {
+               Tastenwertdiff = lastTastenwert - Tastenwert;
+            }
+            //Serial.printf("Tastenwert ok: \t%d Tastenwertdiff: %d\n",Tastenwert,Tastenwertdiff);
+            lastTastenwert = Tastenwert;
+            if (Tastenwertdiff < 5)
+            {
+               //Serial.printf("*C*\n");
+               if (tastaturcounter < ADCTIMEOUT)
+               {
+                  //Serial.printf("D tastaturcounter: %d\n",tastaturcounter);
+                  tastaturcounter++;
+                  
+                  if (tastaturcounter == ADCTIMEOUT) // Messung ist OK
+                  {
+                     
+                     Tastenindex = Tastenwahl(Tastenwert); // taste pressed
+                     //Serial.printf("Tastenwert: %d Tastenindex: %d diff: %d\n",Tastenwert,Tastenindex,Tastenwertdiff);
+                     Serial.printf("Tastenindex: %d \n",Tastenindex);
+
+                     tastaturstatus |= (1<<TASTEOK);
+                     tastaturstatus |= (1<<AKTIONOK); // nur eine Aktion zulassen bis zum naechsten Tastendruck
+                     //                   programmstatus |= (1<< LEDON);
+                     
+     
+                     
+                  }
+               }
+               
+            } // if Tastenwertdiff 
+            
+            else
+            {
+               //Serial.printf("F");
+               
+               tastaturcounter = 0;
+            }
+            
+            
+         }// if not tasteOK
+         
+      } // Tastenwert>10
+      else
+      {
+         //Serial.printf("H");
+         tastaturstatus &= ~(1<<TASTEOK);
+         tastaturcounter = 0;
+         Tastenindex = 0;
+      }
+
+      adcstatus &= ~(1<<ADC_TASTATURBIT);
    }
-   if (sinceCheckTaste > 100) // Tastenstatus abfragen
-   {
-   // Taste[0]
-   if (tastenstatusarray[LOAD_START].pressed) // Taste gedrueckt Load Start
-   {
-      lcd_gotoxy(14,1);
-      lcd_puts("Start");
-      
-      tastenstatusarray[LOAD_START].pressed = 0;
-   }
-   else
-   {
-      lcd_gotoxy(14,1);
-      lcd_putc(' ');
-   }
-   }
-   */
+
    loopcount0+=1;
    if (loopcount0==0x0FFF)
    {
@@ -1312,6 +1405,9 @@ void loop()
 
       Serial.print(F(" curr_L: ")); // shunt
       Serial.println(curr_L_Mitte);
+      
+      //Serial.printf(" Tastenwert: %d Tastenindex: %d\n",Tastenwert, Tastenindex);
+
 
 //      Serial.print(F("hoststatus: "));
  //     Serial.println(hoststatus);
@@ -1344,7 +1440,7 @@ void loop()
          Serial.println(BATT_MAX_RAW);
 */
          //loadstatus &= ~(1<<BATT_DOWN_BIT);
-         
+         Serial.printf(" Tastenwert: %d ",Tastenwert);
          
          if ((batt_M_Mitte < BATT_MIN_RAW) || (batt_O_Mitte < BATT_MIN_RAW))
          {

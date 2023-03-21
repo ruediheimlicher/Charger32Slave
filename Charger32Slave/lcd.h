@@ -6,7 +6,6 @@
 //  Copyright © 2018 Ruedi Heimlicher. All rights reserved.
 //
 
-
 #include <stdio.h>
 #include <util/delay.h>
 #include <inttypes.h>

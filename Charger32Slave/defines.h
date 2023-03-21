@@ -31,6 +31,12 @@
 
 #define ADC_BALANCE        A3 // 17
 
+#define ADC_TASTATUR        A9
+
+
+#define ADC_TASTATURBIT      4
+
+
 #define CHARGE_SET          18 // 18
 #define CHARGE_RESET        19 // 18
 #define DETECT_RESET        20 // 18
@@ -198,6 +204,21 @@
 #define  SPANNUNG_ID       4 // Bit fuer Batteriespannung
 #define  STROM_ID          5 // Bit fuer Strom
 #define  TEMP_ID           6 // Bit fuer Temperatur
+
+//Tastatur2 Teensy3.2 3x3
+
+#define ADCTIMEOUT            1
+
+#define WERT1 218
+#define WERT2 310
+#define WERT3 401
+#define WERT4 493
+#define WERT5 612
+#define WERT6 727
+#define WERT7 812
+#define WERT8 878
+#define WERT9 929
+// revision end
 
 
 //OSZI
