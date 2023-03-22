@@ -39,6 +39,7 @@
  
  
  */
+extern  volatile uint8_t       curr_screen;
 void
 lcd_initialize(uint8_t set_function, uint8_t set_entry_mode, uint8_t on)
 {

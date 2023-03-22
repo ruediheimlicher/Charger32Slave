@@ -16,11 +16,6 @@
 /// @see		ReadMe.txt for references
 ///
 
-
-///
-///
-
-
 #include "Arduino.h"
 
 #include "gpio_MCP23S17.h"
@@ -37,7 +32,8 @@
 
 //#include "analog.h"
 
-//#include "display.h"
+#include "int2string.h"
+#include "display.h"
 
 // define constants
 //#define USB_DATENBREITE 64
@@ -51,9 +47,6 @@ ADC *adc = new ADC(); // adc object
 // Include application, user and local libraries
 // !!! Help http://bit.ly/2CL22Qp
 
-// 
-
-//
 
 
 // Define variables and constants
@@ -128,6 +121,8 @@ volatile uint8_t           tastaturstatus=0;
 
 volatile uint16_t  sekundentimercounter = 0;
 volatile uint16_t adctimersekunde = 0;
+volatile uint8_t adctimerminute = 0;
+volatile uint8_t adctimerstunde = 0;
 int8_t r;
 
 uint16_t count=0;
@@ -140,6 +135,26 @@ volatile uint16_t  usbrecvcounter = 0;
 volatile uint8_t   packetcount = 0;
 
 volatile uint8_t taskcode;
+
+
+// display
+volatile uint8_t posx = 0;
+volatile uint8_t posy = 0;
+
+volatile uint16_t                posregister[4][4]={}; // Aktueller screen: werte fuer page und daraufliegende col fuer Menueintraege (hex). geladen aus progmem
+
+volatile uint16_t                cursorpos[4][4]={}; // Aktueller screen: werte fuer page und darauf liegende col fuer den cursor
+volatile uint16_t                 blink_cursorpos=0xFFFF;
+volatile uint8_t                 curr_screen = 0; // aktueller screen
+volatile uint8_t                 last_screen=0; // letzter screen
+
+volatile uint8_t                 curr_page=7; // aktuelle page
+volatile uint8_t                 curr_col=0; // aktuelle colonne
+
+volatile uint8_t                 curr_cursorzeile=0; // aktuelle zeile des cursors
+volatile uint8_t                 curr_cursorspalte=0; // aktuelle colonne des cursors
+volatile uint8_t                 last_cursorzeile=0; // letzte zeile des cursors
+volatile uint8_t                 last_cursorspalte=0; // letzte colonne des cursors
 
 
 // Charger
@@ -546,6 +561,16 @@ void adctimerfunction()
       }
       sekundentimercounter=0;
       adctimersekunde++;
+      if(adctimersekunde == 60)
+      {
+         adctimersekunde = 0;
+         adctimerminute++;
+         if (adctimerminute == 60)
+         {
+            adctimerminute = 0;
+            adctimerstunde++;
+         }
+      }
       //digitalWriteFast(OSZI_PULS_A, !digitalReadFast(OSZI_PULS_A));
       OSZIATOGG();
    }
@@ -740,9 +765,9 @@ void setup()
    /* initialize the LCD */
    _delay_ms(100);
    lcd_initialize(LCD_FUNCTION_8x2, LCD_CMD_ENTRY_INC, LCD_CMD_ON);
-   _delay_ms(100);
-   lcd_puts("Guten Tag Charger");
-   _delay_ms(500);
+   _delay_ms(200);
+   //lcd_puts("Guten Tag Charger");
+   //_delay_ms(500);
    adcTimer.begin(adctimerfunction,adctimerintervall); // 1ms
    lcd_clr_line(0);
    ADC_init();
@@ -765,7 +790,11 @@ void setup()
    
    attachInterrupt(digitalPinToInterrupt(DETECT_RESET), Reset_ISR, RISING);
    attachInterrupt(digitalPinToInterrupt(LOAD_MANUELL), Start_ISR, RISING);
-   
+   //Serial.printf("setup curr_screen vor: %d \n",curr_screen);
+   sethomescreen();
+   Serial.printf("setup curr_screen nach: %d \n",curr_screen);
+   //curr_screen = 0;
+   _delay_ms(500);
 }
 
 
@@ -957,62 +986,8 @@ void load_start(uint8_t manuell)
    //uint8_t usberfolg = usb_rawhid_send((void*)sendbuffer, 50);
    
 }
-void int_to_floatstr(uint16_t inum,char *outbuf,int8_t decimalpoint_pos, uint8_t maxdigit)
-{
-   int8_t i,j,k;
-   char chbuf[8];
-   itoa(inum,chbuf,10); // convert integer to string
-   /*
-   Serial.print(F("int_to_dispstr"));
-   Serial.print(F(" decimalpoint_pos: "));
-   Serial.print(decimalpoint_pos);
-   Serial.print(F(" maxdigit: "));
-   Serial.print(maxdigit);
-  */
-   i=strlen(chbuf);
- //  Serial.print(F(" strlen: "));
- //  Serial.println(i);
-   
-   if (i>(maxdigit-1)) i=maxdigit-1; //overflow protection
-   
-   /*
-   for(k=0;k<maxdigit;k++)
-   {
-      //strcat(outbuf,' ');
-      outbuf[k] = ' ';
-   }
-  */
-   
-  // strcat(outbuf,'\0');
-   //strcpy(outbuf,"   0"); //decimalpoint_pos==0
-   
-   if (maxdigit==2) strcpy(outbuf," 0");
-   if (maxdigit==3) strcpy(outbuf,"  0");
-   if (maxdigit==4) strcpy(outbuf,"   0");
-   if (maxdigit==5) strcpy(outbuf,"    0");
-   if (maxdigit==6) strcpy(outbuf,"     0");
-  
-   /*
-    if (decimalpoint_pos==1) strcpy(outbuf,"   0.0");
-    if (decimalpoint_pos==2) strcpy(outbuf,"  0.00");
-    if (decimalpoint_pos==3) strcpy(outbuf," 0.000");
-    if (decimalpoint_pos==4) strcpy(outbuf,"0.0000");
-    */
-   uint8_t l = maxdigit;
-   j=l;
-   while(i)
-   {
-      outbuf[j-1]=chbuf[i-1];
-      i--;
-      j--;
-      if (j==l-decimalpoint_pos)
-      {
-         outbuf[j-1]='.';
-         // jump over the pre-set dot
-         j--;
-      }
-   }
-}
+
+
 
 
 
@@ -1117,7 +1092,9 @@ void loop()
          //lcd_puthex(recvbuffer[TASK_BYTE]);           
 
          //Spannung = wert * TEENSYVREF / 1024
-         
+         /*
+          
+          
          lcd_gotoxy(16,0);
          lcd_putint12(adctimersekunde);
          lcd_gotoxy(0,0);
@@ -1137,13 +1114,14 @@ void loop()
          lcd_putc(' ');
          lcd_putc('T');
          lcd_puthex(taskcode);
-         
+          */
+         /*
          lcd_gotoxy(0,2);
          lcd_putc('S');
          //lcd_putc(':');
          lcd_putint12(curr_L_Mitte);
          lcd_putc(' ');
-         /*
+        
          lcd_putc('B');
          lcd_putc(':');
          lcd_putint12(curr_B);
@@ -1153,7 +1131,7 @@ void loop()
          lcd_putc('T');
          lcd_putc(':');
          lcd_putint12(temp_SOURCE);
- */        
+         
          lcd_putc('B');
          //lcd_putc(':');
          lcd_putint12(U_Balance_Mitte);
@@ -1166,11 +1144,12 @@ void loop()
          lcd_putc(' ');
          lcd_putc('H');
          lcd_puthex(hoststatus);
-
+ */
          
          
      //    lcd_clr_line(3);
  //        uint16_t TEENSYVREF_Int = TEENSYVREF*100;
+         /*
          lcd_gotoxy(0,3);
  //        lcd_putint12(TEENSYVREF_Int);
  //        lcd_putc(' ');
@@ -1233,7 +1212,7 @@ void loop()
          lcd_puts(float_StringO);
          //lcd_putc('*');
          
-         /*
+         
          Serial.print(F("****   *** **** loop "));
          Serial.print(F(" batt_M_Spannung "));
          Serial.print(batt_M_Spannung);
@@ -1407,7 +1386,8 @@ void loop()
       Serial.println(curr_L_Mitte);
       
       //Serial.printf(" Tastenwert: %d Tastenindex: %d\n",Tastenwert, Tastenindex);
-
+      //Serial.printf("ino curr_screen: %d \n",curr_screen);
+      update_screen(0);
 
 //      Serial.print(F("hoststatus: "));
  //     Serial.println(hoststatus);
@@ -1651,14 +1631,14 @@ void loop()
                
                
             }break;
-               
+               // MARK: MAX_STROM_SET  
             case MAX_STROM_SET:
             {
                Serial.print(("MAX_STROM_SET  0x90 "));
                
                MAX_PWM_A = ((recvbuffer[MAX_STROM_H_BYTE]) << 8) | recvbuffer[MAX_STROM_L_BYTE] ;
-               //Serial.print("MAX STROM MAX_PWM_A:");
-               //Serial.println(MAX_PWM_A); 
+               Serial.print("MAX STROM MAX_PWM_A:");
+               Serial.println(MAX_PWM_A); 
  
             
             }break;   

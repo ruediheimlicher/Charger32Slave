@@ -146,7 +146,7 @@ TEENSY_LAYOUT = LAYOUT_US_ENGLISH
 # BOARD_TAG is required
 # If not defined, error BOARD_TAG not defined
 #
-#BOARD_TAG  = uno
+BOARD_TAG  = teensy31
 
 # BOARD_PORT is optional
 # !!! Help: http://bit.ly/2yUvq0h
