@@ -31,14 +31,18 @@
 
 #define ADC_BALANCE        A3 // 17
 
+#define CHARGE_SET          18 // 18
+#define CHARGE_RESET        19 // 18
+#define DETECT_RESET        20 // 18
+
 #define ADC_TEMP_SOURCE    A7 // 21
 #define ADC_TEMP_BATT      A8 // 22
 
 // Tasten
-#define LOAD_START         18   // Laden START 
+#define LOAD_START         18   // Laden START  Programm
+#define LOAD_STOP          19    // Laden STOP  Programm
 
-#define LOAD_STOP          19    // Laden STOP 
-#define RESET_IN           20    // Eingaang fuer Reset
+#define RESET_IN           20    // Eingaang fuer Meldung Reset
 
 #define LOAD_MANUELL       8     // Laden mit Taste
 
